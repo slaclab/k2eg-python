@@ -1,7 +1,7 @@
 import os
-from k2eg import k2eg
+from k2eg.k2eg import k2eg
 
-def test_k2eg_get():
+def test_k2eg_config_with_env():
     try:
         # test env variable configuration
         os.environ["K2EG_KAFKA_BROKER_URL"] = 'localhost:1234'

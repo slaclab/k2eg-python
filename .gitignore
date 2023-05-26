@@ -1,0 +1,6 @@
+
+# Ignore dynaconf secret files
+.secrets.*
+tests/__pycache__*
+k2eg/__pycache__*
+.eggs

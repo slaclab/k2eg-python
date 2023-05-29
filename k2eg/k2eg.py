@@ -5,6 +5,7 @@ from readerwriterlock import RWLock
 from kafka import KafkaConsumer
 from kafka import KafkaProducer
 class k2eg:
+    """K2EG client"""
     def __init__(self):
         self.settings = Dynaconf(
                 envvar_prefix="K2EG",
@@ -19,6 +20,33 @@ class k2eg:
         self.__consume_data = True
         self.__monitor_pv_handler = {}
 
+    def __from_json(self, msg):
+        print("__from_json")
+
+    def __from_msgpack(self, msg):
+        print("__from_msgpack")
+
+    def __from_msgpack_compact(self, msg):
+        print("__from_msgpack_compact")
+
+    def __process_message(self, msg):
+        """ Process single message
+        """
+        h = msg.headers
+        if h and h.has_key('k2eg-ser-type'):
+            st = h.get('k2eg-ser-type')
+            if st == "json":
+                pv_name, converted_msg = self.__from_json(msg)
+            elif st == "json":
+                pv_name, converted_msg = self.__from_msgpack(msg)
+            else:
+                pv_name, converted_msg = self.__from_msgpack_compact(msg)
+
+            with self.__lock.get_rlock():
+                logging.debug('read message with ser type {} and send to hanlder'.format(st, self.__monitor_pv_handler[pv_name]))
+                self.__monitor_pv_handler[pv_name](converted_msg)
+        else:
+            print('message with no header')
 
     def __consumer_handler(self):
         """ Consume message form kafka consumer
@@ -29,22 +57,26 @@ class k2eg:
             msgpack-compact
         """
         for msg in self.__consumer:
-            h = msg.headers
-            if h and h.has_key('k2eg-ser-type'):
-                st = h.get('k2eg-ser-type')
-                with self.__lock:
-                    print('read message with ser type {} and send to hanlder'.format(st))
-            else:
-                print('message with no header')
+           self.__process_message(msg)
+            
 
     def get(self, pv_name):
         logging.info("Get for pv {}".format(pv_name))
         return pv_name
     
     def monitor(self, pv_name, handler):
-        if self.__monitor_pv_handler.has_key(pv_name):
-            logging.info("MOnitor already activate for pv {}".format(pv_name))
-            return
-        self.__monitor_pv_handler[pv_name] = handler
+        """ Add a new monitor for pv if it is not already activated
+        Parameters
+                ----------
+                pv_name : str
+                    The name of the PV to monitor
+                handler: function
+                    The handler to be called when a message is received
+        """
+        with self.__lock.get_wlock():
+            if self.__monitor_pv_handler.has_key(pv_name):
+                logging.info("MOnitor already activate for pv {}".format(pv_name))
+                return
+            self.__monitor_pv_handler[pv_name] = handler
         
         

@@ -12,3 +12,4 @@ setuptools
 twine
 pytest
 pytest-runner
+readerwriterlock

@@ -48,8 +48,6 @@ services:
   
   zookeeper:
     image: bitnami/zookeeper:3.8.1
-    ports:
-      # - 2181:2181
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
 
@@ -57,9 +55,6 @@ services:
     image: bitnami/kafka:3.4.0
     depends_on: 
       - zookeeper
-    ports:
-      # - 9092:9092
-      # - 9093:9093
     environment:
       - KAFKA_BROKER_ID=1
       - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181

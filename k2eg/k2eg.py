@@ -6,9 +6,8 @@ from kafka import KafkaConsumer
 from kafka import KafkaProducer
 import re
 import json
-import uuid
 import msgpack
-import queue
+from typing import Callable
 
 class k2eg:
     """K2EG client"""
@@ -29,11 +28,11 @@ class k2eg:
             bootstrap_servers=self.settings.kafka_broker_url,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
+        self.__consume_data = True
         self.__thread = threading.Thread(
             target=self.__consumer_handler
         )
         self.__thread.start()
-        self.__consume_data = True
         self.__monitor_pv_handler = {}
         self.reply_wait_condition = threading.Condition()
         self.reply_ready_event = threading.Event()
@@ -84,7 +83,7 @@ class k2eg:
     def __process_message(self, pv_name, converted_msg):
         """ Process single message
         """
-        with self.__lock.get_rlock():
+        with self.__lock.gen_rlock():
             self.__monitor_pv_handler[pv_name](converted_msg)
             logging.debug('read message sent to {} hanlder'.format(self.__monitor_pv_handler[pv_name]))
 
@@ -118,14 +117,14 @@ class k2eg:
                         self.__process_message(pv_name, converted_msg)
                 self.__consumer.commit()
 
-    def __check_pv_name(pv_name):
+    def __check_pv_name(self, pv_name):
         pattern = r'^[a-zA-Z0-9:]+$'
         if re.match(pattern, pv_name):
             return True
         else:
             return False
 
-    def __normalize_pv_name(pv_name):
+    def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
     def get(self, pv_name, protocol):
@@ -161,7 +160,7 @@ class k2eg:
                 
 
 
-    def monitor(self, pv_name, protocol, handler):
+    def monitor(self, pv_name, protocol, handler: Callable[[any], None]):
         """ Add a new monitor for pv if it is not already activated
         Parameters
                 ----------
@@ -174,7 +173,7 @@ class k2eg:
                 True: the monitor has been activated
                 False: otherwhise
         """
-        if not self.____check_pv_name(pv_name):
+        if not self.__check_pv_name(pv_name):
             raise ValueError(
                 "The PV name can only containes letter (upper or lower), number ad the character ':'")
 
@@ -182,10 +181,10 @@ class k2eg:
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
 
         topics = []
-        with self.__lock.get_wlock():
-            if self.__monitor_pv_handler.has_key(pv_name):
+        with self.__lock.gen_wlock():
+            if pv_name in self.__monitor_pv_handler:
                 logging.info(
-                    "MOnitor already activate for pv {}".format(pv_name))
+                    "Monitor already activate for pv {}".format(pv_name))
                 return
             self.__monitor_pv_handler[pv_name] = handler
             # subscribe to all needed topic

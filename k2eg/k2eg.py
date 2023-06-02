@@ -84,6 +84,8 @@ class k2eg:
         """ Process single message
         """
         with self.__lock.gen_rlock():
+            if pv_name not in self.__monitor_pv_handler:
+                return
             self.__monitor_pv_handler[pv_name](converted_msg)
             logging.debug('read message sent to {} hanlder'.format(self.__monitor_pv_handler[pv_name]))
 
@@ -202,7 +204,7 @@ class k2eg:
             "serialization": "msgpack",
             "protocol": protocol.lower(),
             "pv_name": pv_name,
-            "dest_topic": self.__normalize_pv_name(pv),
+            "dest_topic": self.__normalize_pv_name(pv_name),
             "activate": True
         }
         # send message to k2eg
@@ -211,4 +213,54 @@ class k2eg:
             value=monitor_json_msg
         )
         self.__producer.flush()
-        return True
+    
+    def stop_monitor(self, pv_name) -> bool:
+        """ Stop a new monitor for pv if it is not already activated
+        Parameters
+                ----------
+                pv_name : str
+                    The name of the PV to monitor
+                handler: function
+                    The handler to be called when a message is received
+        Rais:
+                ----------
+                True: the monitor has been activated
+                False: otherwhise
+        """
+        if not self.__check_pv_name(pv_name):
+            raise ValueError(
+                "The PV name can only containes letter (upper or lower), number ad the character ':'")
+
+        topics = []
+        with self.__lock.gen_wlock():
+            if pv_name not in self.__monitor_pv_handler:
+                logging.info(
+                    "Monitor already stopped for pv {}".format(pv_name))
+                return
+            del self.__monitor_pv_handler[pv_name]
+            # subscribe to all needed topic
+            # incllude the reply topic
+            topics.append(self.settings.reply_topic)
+            for pv in self.__monitor_pv_handler:
+                # create topic name from the pv one
+                topics.append(self.__normalize_pv_name(pv))
+            logging.debug("start subscribtion on topics {}".format(topics))
+            if topics.count != 0:
+                self.__consumer.subscribe(topics)
+            else:
+                self.__consumer.unsubscribe()
+
+        # send message to k2eg from activate (only for last topics) monitor(just in case it is not already activated)
+        monitor_json_msg = {
+            "command": "monitor",
+            "serialization": "msgpack",
+            "pv_name": pv_name,
+            "dest_topic": self.__normalize_pv_name(pv_name),
+            "activate": False
+        }
+        # send message to k2eg
+        self.__producer.send(
+            self.settings.k2eg_cmd_topic,
+            value=monitor_json_msg
+        )
+        self.__producer.flush()

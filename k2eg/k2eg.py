@@ -22,7 +22,7 @@ class k2eg:
         self.__lock = rwlock.RWLockFairD()
         self.__consumer = KafkaConsumer(
             bootstrap_servers=self.settings.kafka_broker_url,
-            group_id='k2eg_'+str(uuid.uuid1()),
+            group_id=self.settings.group_id,
             auto_offset_reset="latest")
         self.__consumer.subscribe([self.settings.reply_topic])
         self.__producer = KafkaProducer(
@@ -30,7 +30,8 @@ class k2eg:
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
         self.__thread = threading.Thread(
-            target=self.__consumer_handler)
+            target=self.__consumer_handler
+        )
         self.__thread.start()
         self.__consume_data = True
         self.__monitor_pv_handler = {}
@@ -38,21 +39,46 @@ class k2eg:
         self.reply_ready_event = threading.Event()
         self.reply_message = {}
     
+    def __del__(self):
+        # Perform cleanup operations when the instance is deleted
+        self.close();
+
+    def close(self):
+        self.__consume_data = False
+        self.__thread.join()
+        self.__producer.close()
+        self.__consumer.close()
+
+    def __from_json(self, j_msg):
+        print('__from_json')
+
+    def __from_msgpack(self, m_msg):
+        pv_name = None
+        converted_msg = None
+        decodec_msg = msgpack.loads(m_msg)
+        if isinstance(decodec_msg, dict) and len(decodec_msg)==1:
+            pv_name = list(decodec_msg.keys())[0]
+            converted_msg = decodec_msg
+        return pv_name, converted_msg
+
+    def __from_msgpack_compack(self, mc_msg):
+        print('__from_msgpack_compack')
+
     def __decode_message(self, msg):
         """ Decode single message
         """
-        h = msg.headers
-        if h and h.has_key('k2eg-ser-type'):
-            st = h.get('k2eg-ser-type')
-            if st == "json":
-                pv_name, converted_msg = json.load(msg)
-            elif st == "msgpack":
-                pv_name, converted_msg = msgpack.loads(msg)
-            elif st == "msgpack-compact":
-                pv_name, converted_msg = msgpack.loads(msg)
-            else:
-                pv_name = None
-                converted_msg = None
+        pv_name = None
+        converted_msg = None
+        for header in msg.headers:
+            if header[0] == 'k2eg-ser-type':
+                st = header[1].decode('utf-8')
+                if st == "json":
+                    pv_name, converted_msg = self.__from_json(msg.value)
+                elif st == "msgpack":
+                    pv_name, converted_msg = self.__from_msgpack(msg.value)
+                elif st == "msgpack-compact":
+                    pv_name, converted_msg = self.__from_msgpack_compack(msg.value)
+                break   
         return pv_name, converted_msg
 
     def __process_message(self, pv_name, converted_msg):
@@ -70,17 +96,27 @@ class k2eg:
             msgpack, 
             msgpack-compact
         """
-        for msg in self.__consumer:
-            pv_name, converted_msg = self.__decode_message(msg)
-            if pv_name != None and converted_msg != None:
-                continue
-            #check if message came from reply topic
-            if msg.topic == self.settings.reply_topic:
-                with self.reply_wait_condition:
-                    self.reply_message[pv_name] = converted_msg
-                    self.reply_wait_condition.notifyAll()
-            else:
-                self.__process_message(pv_name, converted_msg)
+        while self.__consume_data:
+        #for msg in self.__consumer:
+            messages = self.__consumer.poll(10.0, 1)
+            for topic_partition, message_list in messages.items():
+                if topic_partition.topic == self.settings.reply_topic:
+                    for msg in message_list:
+                        logging.info("received reply with offset {}".format(msg.offset))
+                        pv_name, converted_msg = self.__decode_message(msg)
+                        if pv_name == None or converted_msg == None:
+                            continue
+                        with self.reply_wait_condition:
+                            self.reply_message[pv_name] = converted_msg
+                            self.reply_wait_condition.notifyAll()
+                else:
+                    for msg in message_list:
+                        logging.info("received monitor message with offset {} from topic {}".format(msg.offset, topic_partition.topic))
+                        pv_name, converted_msg = self.__decode_message(msg)
+                        if pv_name == None or converted_msg == None:
+                            continue
+                        self.__process_message(pv_name, converted_msg)
+                self.__consumer.commit()
 
     def __check_pv_name(pv_name):
         pattern = r'^[a-zA-Z0-9:]+$'
@@ -102,10 +138,10 @@ class k2eg:
         fetched = False
         monitor_json_msg = {
             "command": "get",
-            # "serialization": "msgpack",
-            # "protocol": protocol.lower(),
-            # "pv_name": pv_name,
-            # "dest_topic": self.settings.reply_topic,
+            "serialization": "msgpack",
+            "protocol": protocol.lower(),
+            "pv_name": pv_name,
+            "dest_topic": self.settings.reply_topic,
         }
         # send message to k2eg
         self.__producer.send(
@@ -115,6 +151,7 @@ class k2eg:
         self.__producer.flush()
         # wait for response
         while(not fetched):
+            logging.info("Wait for message")
             with self.reply_wait_condition:
                 self.reply_wait_condition.wait()
                 if self.reply_message[pv_name] == None:

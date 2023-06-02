@@ -41,7 +41,7 @@ class k2eg:
     
     def __del__(self):
         # Perform cleanup operations when the instance is deleted
-        self.close();
+        self.close()
 
     def close(self):
         self.__consume_data = False

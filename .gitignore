@@ -4,3 +4,5 @@
 tests/__pycache__*
 k2eg/__pycache__*
 .eggs
+dist
+k2eg.egg-info

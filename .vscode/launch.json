@@ -11,7 +11,16 @@
             "module": "k2eg",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["get", "channel:ramp:ramp", "pva"]
+            "args": ["get", "channel:ramp:ramp"]
+        },
+        {
+            "name": "Call Monitor",
+            "type": "python",
+            "request": "launch",
+            "module": "k2eg",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["monitor", "channel:ramp:ramp"]
         }
     ]
 }

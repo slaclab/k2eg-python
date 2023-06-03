@@ -8,6 +8,7 @@ import re
 import json
 import msgpack
 from typing import Callable
+import uuid
 
 class k2eg:
     """K2EG client"""
@@ -21,7 +22,7 @@ class k2eg:
         self.__lock = rwlock.RWLockFairD()
         self.__consumer = KafkaConsumer(
             bootstrap_servers=self.settings.kafka_broker_url,
-            group_id=self.settings.group_id,
+            group_id=self.settings.group_id+'_'+str(uuid.uuid1()),
             auto_offset_reset="latest")
         self.__consumer.subscribe([self.settings.reply_topic])
         self.__producer = KafkaProducer(

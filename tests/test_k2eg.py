@@ -3,6 +3,7 @@ import time
 
 def test_k2eg_get():
     k = k2eg()
+    k.wait_for_reply_available()
     get_value = k.get('channel:ramp:ramp','pva')
     assert get_value != None, "value should not be None"
     k.close()

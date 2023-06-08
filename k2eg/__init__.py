@@ -2,4 +2,4 @@
 from dynaconf import Dynaconf
 import logging
 
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.DEBUG)

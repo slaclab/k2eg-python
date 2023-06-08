@@ -1,15 +1,15 @@
 import logging
+import time
 from dynaconf import Dynaconf
 import threading
 from readerwriterlock import rwlock
-from confluent_kafka import Consumer
+from confluent_kafka import Consumer, TopicPartition
 from confluent_kafka import Producer
 from confluent_kafka import KafkaError
 import re
 import json
 import msgpack
 from typing import Callable
-import uuid
 
 class k2eg:
     """K2EG client"""
@@ -21,13 +21,16 @@ class k2eg:
             ignore_unknown_envvars=True
         )
         self.__lock = rwlock.RWLockFairD()
+        self.__reply_partition_assigned = threading.Event()
         config_consumer = {
             'bootstrap.servers': self.settings.kafka_broker_url,  # Change this to your broker(s)
             'group.id': self.settings.group_id, #+'_'+str(uuid.uuid1()),  # Change this to your group
             'auto.offset.reset': 'latest',
         }
         self.__consumer = Consumer(config_consumer)
-        self.__consumer.subscribe([self.settings.reply_topic])
+        self.__consumer.subscribe([self.settings.reply_topic], on_assign=self.__on_assign)
+        #reset to listen form now
+        self.__reset_topic_offset_in_time(self.settings.reply_topic, int(time.time() * 1000))
         config_producer = {
             'bootstrap.servers': self.settings.kafka_broker_url,  # Change this to your broker(s)
         }
@@ -42,22 +45,31 @@ class k2eg:
         self.reply_ready_event = threading.Event()
         self.reply_message = {}
 
-    # def __reset_topic_offset(self, topic_name):
-    #     ### Set the topic offset to the end of messages
-    #     ###
-    #     low, high = self.__consumer.get_watermark_offsets(TopicPartition('test', 0))
-    #     print("the latest offset is {}".format(high))
-    #     c.assign([TopicPartition('test', 0, high-1)])
-    #     #dummy poll
-    #     #start iterate
-    #     while True:
-    #         msg = c.poll(1.0)
-    #         if msg is None:
-    #             continue
-    #         if msg.error():
-    #             print("Consumer error: {}".format(msg.error()))
-    #             continue
-    #         print('Received message: {}'.format(msg.value().decode('utf-8')))
+
+    def __on_assign(self, consumer, partitions):
+        logging.debug('Topic assignment:', partitions)
+        self.__reply_partition_assigned.set()
+
+    def __reset_topic_offset_in_time(self, topic, timestamp):
+        """ Set the topic offset to the end of messages
+        """
+        # low, high = self.__consumer.get_watermark_offsets(TopicPartition('test', 0))
+        # print("the latest offset is {}".format(high))
+        # c.assign([TopicPartition('test', 0, high-1)])
+        # Get the partitions for the topic
+        partitions = self.__consumer.list_topics(topic).topics[topic].partitions.keys()
+
+        # Create TopicPartition objects for each partition, with the specific timestamp
+        topic_partitions = [TopicPartition(topic, p, int(timestamp * 1000)) for p in partitions]
+
+        # Get the offsets for the specific timestamps
+        offsets_for_times = self.__consumer.offsets_for_times(topic_partitions)
+
+        # Set the starting offset of the consumer to the returned offsets
+        for tp in offsets_for_times:
+            if tp.offset != -1:  # If an offset was found
+                self.__consumer.seek(tp)
+
 
     def __del__(self):
         # Perform cleanup operations when the instance is deleted
@@ -66,7 +78,7 @@ class k2eg:
     def close(self):
         self.__consume_data = False
         self.__thread.join()
-        self.__producer.close()
+        self.__producer.flush()
         self.__consumer.close()
 
     def __from_json(self, j_msg):
@@ -89,15 +101,20 @@ class k2eg:
         """
         pv_name = None
         converted_msg = None
-        for header in msg.headers:
-            if header[0] == 'k2eg-ser-type':
-                st = header[1].decode('utf-8')
+        headers = msg.headers()
+        if headers is None:
+            logging.error("Message without header received")
+            return pv_name, converted_msg
+        
+        for key, value in headers:
+            if key == 'k2eg-ser-type':
+                st = value.decode('utf-8')
                 if st == "json":
-                    pv_name, converted_msg = self.__from_json(msg.value)
+                    pv_name, converted_msg = self.__from_json(msg.value())
                 elif st == "msgpack":
-                    pv_name, converted_msg = self.__from_msgpack(msg.value)
+                    pv_name, converted_msg = self.__from_msgpack(msg.value())
                 elif st == "msgpack-compact":
-                    pv_name, converted_msg = self.__from_msgpack_compack(msg.value)
+                    pv_name, converted_msg = self.__from_msgpack_compack(msg.value())
                 break   
         return pv_name, converted_msg
 
@@ -120,7 +137,7 @@ class k2eg:
         """
         while self.__consume_data:
         #for msg in self.__consumer:
-            message = self.__consumer.poll(timeout = 10.0)
+            message = self.__consumer.poll(timeout = 0.1)
             if message is None: continue
             if message.error():
                 if message.error().code() == KafkaError._PARTITION_EOF:
@@ -130,7 +147,7 @@ class k2eg:
                     logging.error(message.error())
             else:
                 # good message
-                if message.topic == self.settings.reply_topic:
+                if message.topic() == self.settings.reply_topic:
                     logging.info("received reply with offset {}".format(message.offset))
                     pv_name, converted_msg = self.__decode_message(message)
                     if pv_name == None or converted_msg == None:
@@ -156,6 +173,11 @@ class k2eg:
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
+    def wait_for_reply_available(self):
+        """ Wait untile the consumer has joined the reply topic
+        """
+        self.__reply_partition_assigned.wait()
+
     def get(self, pv_name, protocol):
         """ Perform the get operation
         """
@@ -164,7 +186,7 @@ class k2eg:
         # clear the reply message for the requested pv
         self.reply_message[pv_name] = None
         fetched = False
-        monitor_json_msg = {
+        get_json_msg = {
             "command": "get",
             "serialization": "msgpack",
             "protocol": protocol.lower(),
@@ -172,9 +194,9 @@ class k2eg:
             "dest_topic": self.settings.reply_topic,
         }
         # send message to k2eg
-        self.__producer.send(
+        self.__producer.produce(
             self.settings.k2eg_cmd_topic,
-            value=monitor_json_msg
+            value=json.dumps(get_json_msg) 
         )
         self.__producer.flush()
         # wait for response
@@ -223,7 +245,7 @@ class k2eg:
                 # create topic name from the pv one
                 topics.append(self.__normalize_pv_name(pv))
             logging.debug("start subscribtion on topics {}".format(topics))
-            self.__consumer.subscribe(topics)
+            self.__consumer.subscribe(topics, on_assign=self.__on_assign)
 
         # send message to k2eg from activate (only for last topics) monitor(just in case it is not already activated)
         monitor_json_msg = {
@@ -235,9 +257,9 @@ class k2eg:
             "activate": True
         }
         # send message to k2eg
-        self.__producer.send(
+        self.__producer.produce(
             self.settings.k2eg_cmd_topic,
-            value=monitor_json_msg
+            value=json.dumps(monitor_json_msg)
         )
         self.__producer.flush()
     
@@ -273,12 +295,12 @@ class k2eg:
                 topics.append(self.__normalize_pv_name(pv))
             logging.debug("start subscribtion on topics {}".format(topics))
             if topics.count != 0:
-                self.__consumer.subscribe(topics)
+                self.__consumer.subscribe(topics, on_assign=self.__on_assign)
             else:
                 self.__consumer.unsubscribe()
 
         # send message to k2eg from activate (only for last topics) monitor(just in case it is not already activated)
-        monitor_json_msg = {
+        stop_monitor_json_msg = {
             "command": "monitor",
             "serialization": "msgpack",
             "pv_name": pv_name,
@@ -286,8 +308,8 @@ class k2eg:
             "activate": False
         }
         # send message to k2eg
-        self.__producer.send(
+        self.__producer.produce(
             self.settings.k2eg_cmd_topic,
-            value=monitor_json_msg
+            value=json.dumps(stop_monitor_json_msg)
         )
         self.__producer.flush()

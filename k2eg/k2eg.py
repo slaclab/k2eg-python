@@ -2,8 +2,9 @@ import logging
 from dynaconf import Dynaconf
 import threading
 from readerwriterlock import rwlock
-from kafka import KafkaConsumer
-from kafka import KafkaProducer
+from confluent_kafka import Consumer
+from confluent_kafka import Producer
+from confluent_kafka import KafkaError
 import re
 import json
 import msgpack
@@ -20,15 +21,17 @@ class k2eg:
             ignore_unknown_envvars=True
         )
         self.__lock = rwlock.RWLockFairD()
-        self.__consumer = KafkaConsumer(
-            bootstrap_servers=self.settings.kafka_broker_url,
-            group_id=self.settings.group_id+'_'+str(uuid.uuid1()),
-            auto_offset_reset="latest")
+        config_consumer = {
+            'bootstrap.servers': self.settings.kafka_broker_url,  # Change this to your broker(s)
+            'group.id': self.settings.group_id, #+'_'+str(uuid.uuid1()),  # Change this to your group
+            'auto.offset.reset': 'latest',
+        }
+        self.__consumer = Consumer(config_consumer)
         self.__consumer.subscribe([self.settings.reply_topic])
-        self.__producer = KafkaProducer(
-            bootstrap_servers=self.settings.kafka_broker_url,
-            value_serializer=lambda v: json.dumps(v).encode('utf-8')
-        )
+        config_producer = {
+            'bootstrap.servers': self.settings.kafka_broker_url,  # Change this to your broker(s)
+        }
+        self.__producer = Producer(config_producer)
         self.__consume_data = True
         self.__thread = threading.Thread(
             target=self.__consumer_handler
@@ -38,7 +41,24 @@ class k2eg:
         self.reply_wait_condition = threading.Condition()
         self.reply_ready_event = threading.Event()
         self.reply_message = {}
-    
+
+    # def __reset_topic_offset(self, topic_name):
+    #     ### Set the topic offset to the end of messages
+    #     ###
+    #     low, high = self.__consumer.get_watermark_offsets(TopicPartition('test', 0))
+    #     print("the latest offset is {}".format(high))
+    #     c.assign([TopicPartition('test', 0, high-1)])
+    #     #dummy poll
+    #     #start iterate
+    #     while True:
+    #         msg = c.poll(1.0)
+    #         if msg is None:
+    #             continue
+    #         if msg.error():
+    #             print("Consumer error: {}".format(msg.error()))
+    #             continue
+    #         print('Received message: {}'.format(msg.value().decode('utf-8')))
+
     def __del__(self):
         # Perform cleanup operations when the instance is deleted
         self.close()
@@ -100,24 +120,30 @@ class k2eg:
         """
         while self.__consume_data:
         #for msg in self.__consumer:
-            messages = self.__consumer.poll(10.0, 1)
-            for topic_partition, message_list in messages.items():
-                if topic_partition.topic == self.settings.reply_topic:
-                    for msg in message_list:
-                        logging.info("received reply with offset {}".format(msg.offset))
-                        pv_name, converted_msg = self.__decode_message(msg)
-                        if pv_name == None or converted_msg == None:
-                            continue
-                        with self.reply_wait_condition:
-                            self.reply_message[pv_name] = converted_msg
-                            self.reply_wait_condition.notifyAll()
+            message = self.__consumer.poll(timeout = 10.0)
+            if message is None: continue
+            if message.error():
+                if message.error().code() == KafkaError._PARTITION_EOF:
+                    # End of partition event
+                    logging.error('{} [{}]reached end at offset {}'.format(message.topic(), message.partition(), message.offset()))
+                elif message.error():
+                    logging.error(message.error())
+            else:
+                # good message
+                if message.topic == self.settings.reply_topic:
+                    logging.info("received reply with offset {}".format(message.offset))
+                    pv_name, converted_msg = self.__decode_message(message)
+                    if pv_name == None or converted_msg == None:
+                        continue
+                    with self.reply_wait_condition:
+                        self.reply_message[pv_name] = converted_msg
+                        self.reply_wait_condition.notifyAll()
                 else:
-                    for msg in message_list:
-                        logging.info("received monitor message with offset {} from topic {}".format(msg.offset, topic_partition.topic))
-                        pv_name, converted_msg = self.__decode_message(msg)
-                        if pv_name == None or converted_msg == None:
-                            continue
-                        self.__process_message(pv_name, converted_msg)
+                    logging.info("received monitor message with offset {} from topic {}".format(message.offset, message.topic))
+                    pv_name, converted_msg = self.__decode_message(message)
+                    if pv_name == None or converted_msg == None:
+                        continue
+                    self.__process_message(pv_name, converted_msg)
                 self.__consumer.commit()
 
     def __check_pv_name(self, pv_name):

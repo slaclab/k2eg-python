@@ -11,29 +11,16 @@ import json
 import msgpack
 from typing import Callable
 
+from .broker import Broker
+
 class dml:
     """K2EG client"""
     def __init__(self, environment_id:str):
-        self.settings = Dynaconf(
-            envvar_prefix="K2EG",
-            settings_files=["settings.toml", ".secrets.toml"],
-            ignore_unknown_envvars=True
-        )
+        self.__broker = Broker(environment_id)
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()
-        config_consumer = {
-            'bootstrap.servers': self.settings.kafka_broker_url,  # Change this to your broker(s)
-            'group.id': self.settings.group_id, #+'_'+str(uuid.uuid1()),  # Change this to your group
-            'auto.offset.reset': 'latest',
-        }
-        self.__consumer = Consumer(config_consumer)
-        self.__consumer.subscribe([self.settings.reply_topic], on_assign=self.__on_assign)
+        
         #reset to listen form now
-        self.__reset_topic_offset_in_time(self.settings.reply_topic, int(time.time() * 1000))
-        config_producer = {
-            'bootstrap.servers': self.settings.kafka_broker_url,  # Change this to your broker(s)
-        }
-        self.__producer = Producer(config_producer)
         self.__consume_data = True
         self.__thread = threading.Thread(
             target=self.__consumer_handler
@@ -45,31 +32,6 @@ class dml:
         self.reply_message = {}
 
 
-    def __on_assign(self, consumer, partitions):
-        logging.debug('Topic assignment:', partitions)
-        self.__reply_partition_assigned.set()
-
-    def __reset_topic_offset_in_time(self, topic, timestamp):
-        """ Set the topic offset to the end of messages
-        """
-        # low, high = self.__consumer.get_watermark_offsets(TopicPartition('test', 0))
-        # print("the latest offset is {}".format(high))
-        # c.assign([TopicPartition('test', 0, high-1)])
-        # Get the partitions for the topic
-        partitions = self.__consumer.list_topics(topic).topics[topic].partitions.keys()
-
-        # Create TopicPartition objects for each partition, with the specific timestamp
-        topic_partitions = [TopicPartition(topic, p, int(timestamp * 1000)) for p in partitions]
-
-        # Get the offsets for the specific timestamps
-        offsets_for_times = self.__consumer.offsets_for_times(topic_partitions)
-
-        # Set the starting offset of the consumer to the returned offsets
-        for tp in offsets_for_times:
-            if tp.offset != -1:  # If an offset was found
-                self.__consumer.seek(tp)
-
-
     def __del__(self):
         # Perform cleanup operations when the instance is deleted
         self.close()
@@ -77,8 +39,7 @@ class dml:
     def close(self):
         self.__consume_data = False
         self.__thread.join()
-        self.__producer.flush()
-        self.__consumer.close()
+        self.__broker.close()
 
     def __from_json(self, j_msg):
         print('__from_json')
@@ -136,7 +97,7 @@ class dml:
         """
         while self.__consume_data:
         #for msg in self.__consumer:
-            message = self.__consumer.poll(timeout = 0.1)
+            message = self.__broker.get_next_message()
             if message is None: continue
             if message.error():
                 if message.error().code() == KafkaError._PARTITION_EOF:
@@ -146,7 +107,7 @@ class dml:
                     logging.error(message.error())
             else:
                 # good message
-                if message.topic() == self.settings.reply_topic:
+                if message.topic() == self.__broker.get_reply_topic():
                     logging.info("received reply with offset {}".format(message.offset))
                     pv_name, converted_msg = self.__decode_message(message)
                     if pv_name == None or converted_msg == None:
@@ -160,7 +121,7 @@ class dml:
                     if pv_name == None or converted_msg == None:
                         continue
                     self.__process_message(pv_name, converted_msg)
-                self.__consumer.commit()
+                self.__broker.commit_current_fetched_message()
 
     def __check_pv_name(self, pv_name):
         pattern = r'^[a-zA-Z0-9:]+$'
@@ -172,11 +133,6 @@ class dml:
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
-    def wait_for_reply_available(self):
-        """ Wait untile the consumer has joined the reply topic
-        """
-        self.__reply_partition_assigned.wait()
-
     def get(self, pv_name: str, protocol: str = 'pva'):
         """ Perform the get operation
         """
@@ -184,23 +140,15 @@ class dml:
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
         
         # wait for consumer joined the topic
-        self.wait_for_reply_available()
+        self.__broker.wait_for_reply_available()
         # clear the reply message for the requested pv
         self.reply_message[pv_name] = None
         fetched = False
-        get_json_msg = {
-            "command": "get",
-            "serialization": "msgpack",
-            "protocol": protocol.lower(),
-            "pv_name": pv_name,
-            "dest_topic": self.settings.reply_topic,
-        }
         # send message to k2eg
-        self.__producer.produce(
-            self.settings.k2eg_cmd_topic,
-            value=json.dumps(get_json_msg) 
+        self.__broker.send_get_command(
+            pv_name,
+            protocol.lower()
         )
-        self.__producer.flush()
         # wait for response
         while(not fetched):
             logging.info("Wait for message")
@@ -240,30 +188,14 @@ class dml:
                     "Monitor already activate for pv {}".format(pv_name))
                 return
             self.__monitor_pv_handler[pv_name] = handler
-            # subscribe to all needed topic
-            # incllude the reply topic
-            topics.append(self.settings.reply_topic)
-            for pv in self.__monitor_pv_handler:
-                # create topic name from the pv one
-                topics.append(self.__normalize_pv_name(pv))
-            logging.debug("start subscribtion on topics {}".format(topics))
-            self.__consumer.subscribe(topics, on_assign=self.__on_assign)
+            self.__broker.add_topic(self.__normalize_pv_name(pv_name))
 
         # send message to k2eg from activate (only for last topics) monitor(just in case it is not already activated)
-        monitor_json_msg = {
-            "command": "monitor",
-            "serialization": "msgpack",
-            "protocol": protocol.lower(),
-            "pv_name": pv_name,
-            "dest_topic": self.__normalize_pv_name(pv_name),
-            "activate": True
-        }
-        # send message to k2eg
-        self.__producer.produce(
-            self.settings.k2eg_cmd_topic,
-            value=json.dumps(monitor_json_msg)
+        self.__broker.send_start_monitor_command(
+            pv_name,
+            protocol,
+            self.__normalize_pv_name(pv_name)
         )
-        self.__producer.flush()
     
     def stop_monitor(self, pv_name: str):
         """ Stop a new monitor for pv if it is not already activated
@@ -289,32 +221,13 @@ class dml:
                     "Monitor already stopped for pv {}".format(pv_name))
                 return
             del self.__monitor_pv_handler[pv_name]
-            # subscribe to all needed topic
-            # incllude the reply topic
-            topics.append(self.settings.reply_topic)
-            for pv in self.__monitor_pv_handler:
-                # create topic name from the pv one
-                topics.append(self.__normalize_pv_name(pv))
-            logging.debug("start subscribtion on topics {}".format(topics))
-            if topics.count != 0:
-                self.__consumer.subscribe(topics, on_assign=self.__on_assign)
-            else:
-                self.__consumer.unsubscribe()
+            self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
 
         # send message to k2eg from activate (only for last topics) monitor(just in case it is not already activated)
-        stop_monitor_json_msg = {
-            "command": "monitor",
-            "serialization": "msgpack",
-            "pv_name": pv_name,
-            "dest_topic": self.__normalize_pv_name(pv_name),
-            "activate": False
-        }
-        # send message to k2eg
-        self.__producer.produce(
-            self.settings.k2eg_cmd_topic,
-            value=json.dumps(stop_monitor_json_msg)
+        self.__broker.send_stop_monitor_command(
+            pv_name,
+            self.__normalize_pv_name(pv_name)
         )
-        self.__producer.flush()
 
     def put(self, pv_name: str, value: any, protocol: str = 'pva'):
         """ Set the value for a single pv
@@ -334,15 +247,8 @@ class dml:
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
         
         # create emssage for k2eg
-        put_value_json_msg = {
-            "command": "put",
-            "protocol": protocol,
-            "pv_name": pv_name,
-            "value": str(value)
-        }
-        # send message to k2eg
-        self.__producer.produce(
-            self.settings.k2eg_cmd_topic,
-            value=json.dumps(put_value_json_msg)
+        self.__broker.send_put_command(
+            pv_name,
+            value,
+            protocol
         )
-        self.__producer.flush()

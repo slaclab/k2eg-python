@@ -1,5 +1,5 @@
 import pytest
-from k2eg._broker import Broker as broker
+from k2eg.broker import Broker as broker
 
 def test_broker_bad_conf():
     with pytest.raises(ValueError, 

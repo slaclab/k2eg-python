@@ -11,10 +11,11 @@ import json
 import msgpack
 from typing import Callable
 
-class k2eg:
-    """K2EG client"""
+from k2eg._broker
 
-    def __init__(self):
+class dml:
+    """K2EG client"""
+    def __init__(self, environment_id:str):
         self.settings = Dynaconf(
             envvar_prefix="K2EG",
             settings_files=["settings.toml", ".secrets.toml"],
@@ -183,6 +184,9 @@ class k2eg:
         """
         if protocol.lower() != "pva" and protocol.lower() != "ca":
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
+        
+        # wait for consumer joined the topic
+        self.wait_for_reply_available()
         # clear the reply message for the requested pv
         self.reply_message[pv_name] = None
         fetched = False

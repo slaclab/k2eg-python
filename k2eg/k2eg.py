@@ -207,7 +207,7 @@ class k2eg:
                 if self.reply_message[pv_name] == None:
                     continue
                 fetched = True
-        return self.reply_message[pv_name]
+        return self.reply_message[pv_name][pv_name]
                 
 
 
@@ -314,7 +314,7 @@ class k2eg:
         )
         self.__producer.flush()
 
-    def put(self, pv_name: str, value: str, protocol: str = 'pva'):
+    def put(self, pv_name: str, value: any, protocol: str = 'pva'):
         """ Set the value for a single pv
 
         Args:
@@ -336,7 +336,7 @@ class k2eg:
             "command": "put",
             "protocol": protocol,
             "pv_name": pv_name,
-            "value": value
+            "value": str(value)
         }
         # send message to k2eg
         self.__producer.produce(

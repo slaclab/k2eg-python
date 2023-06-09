@@ -30,3 +30,22 @@ def test_k2eg_monitor():
     assert received_message != None, "value should not be None"
     k.stop_monitor('channel:ramp:ramp')
     k.close()
+
+def test_put():
+    k = k2eg()
+    k.wait_for_reply_available()
+    try:
+        k.put("variable:a", 0)
+        k.put("variable:b", 0)
+        time.sleep(2)
+        res = k.get("variable:sum")
+        assert res['value'] == 0, "value should not be 0"
+        k.put("variable:a", 2)
+        k.put("variable:b", 2)
+        #give some time to ioc to update
+        time.sleep(1)
+        res = k.get("variable:sum")
+        assert res['value'] == 4, "value should not be 0"
+    finally:
+        k.close()
+    

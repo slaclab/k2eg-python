@@ -11,8 +11,6 @@ import json
 import msgpack
 from typing import Callable
 
-from k2eg._broker
-
 class dml:
     """K2EG client"""
     def __init__(self, environment_id:str):

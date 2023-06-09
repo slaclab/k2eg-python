@@ -178,7 +178,7 @@ class k2eg:
         """
         self.__reply_partition_assigned.wait()
 
-    def get(self, pv_name, protocol):
+    def get(self, pv_name: str, protocol: str = 'pva'):
         """ Perform the get operation
         """
         if protocol.lower() != "pva" and protocol.lower() != "ca":
@@ -211,7 +211,7 @@ class k2eg:
                 
 
 
-    def monitor(self, pv_name, protocol, handler: Callable[[any], None]):
+    def monitor(self, pv_name: str, handler: Callable[[any], None], protocol: str = 'pva'):
         """ Add a new monitor for pv if it is not already activated
         Parameters
                 ----------
@@ -263,7 +263,7 @@ class k2eg:
         )
         self.__producer.flush()
     
-    def stop_monitor(self, pv_name) -> bool:
+    def stop_monitor(self, pv_name: str):
         """ Stop a new monitor for pv if it is not already activated
         Parameters
                 ----------
@@ -311,5 +311,36 @@ class k2eg:
         self.__producer.produce(
             self.settings.k2eg_cmd_topic,
             value=json.dumps(stop_monitor_json_msg)
+        )
+        self.__producer.flush()
+
+    def put(self, pv_name: str, value: str, protocol: str = 'pva'):
+        """ Set the value for a single pv
+
+        Args:
+            pv_name (str): is the name of the pv
+            value (str): is the new value
+            protocol (str): the protocl of the pv, the default is pva
+        Raises:
+            ValueError: if some paramter are not valid
+        """
+        if not self.__check_pv_name(pv_name):
+            raise ValueError(
+                "The PV name can only containes letter (upper or lower), number ad the character ':'")
+
+        if protocol.lower() != "pva" and protocol.lower() != "ca":
+            raise ValueError("The portocol need to be one of 'pva'  'ca'")
+        
+        # create emssage for k2eg
+        put_value_json_msg = {
+            "command": "put",
+            "protocol": protocol,
+            "pv_name": pv_name,
+            "value": value
+        }
+        # send message to k2eg
+        self.__producer.produce(
+            self.settings.k2eg_cmd_topic,
+            value=json.dumps(put_value_json_msg)
         )
         self.__producer.flush()

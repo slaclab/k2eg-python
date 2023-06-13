@@ -40,7 +40,7 @@ def test_put():
         k.put("variable:a", 2)
         k.put("variable:b", 2)
         #give some time to ioc to update
-        time.sleep(1)
+        time.sleep(2)
         res = k.get("variable:sum")
         assert res['value'] == 4, "value should not be 0"
     finally:

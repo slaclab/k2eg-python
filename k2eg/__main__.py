@@ -1,5 +1,5 @@
 from k2eg import cli
-from k2eg.k2eg import k2eg
+from k2eg.dml import k2eg
 import typer
 from typing import Optional
 import signal

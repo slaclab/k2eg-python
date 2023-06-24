@@ -26,10 +26,12 @@ class Broker:
             'bootstrap.servers': self.__config.get(self.__enviroment_set, 'kafka_broker_url'),  # Change this to your broker(s)
             'group.id': str(uuid.uuid1()),  # Change this to your group
             'auto.offset.reset': 'latest',
+            #'debug': 'consumer,cgrp,topic,fetch',
         }
         self.__consumer = Consumer(config_consumer)
         config_producer = {
             'bootstrap.servers': self.__config.get(self.__enviroment_set, 'kafka_broker_url'),  # Change this to your broker(s)
+            #'debug': 'consumer,cgrp,topic,fetch',
         }
         self.__producer = Producer(config_producer)
         self.__reply_topic = self.__config.get(self.__enviroment_set, 'reply_topic')
@@ -39,6 +41,7 @@ class Broker:
         self.reset_topic_offset_in_time(self.__reply_topic, int(time.time() * 1000))
 
     def __on_assign(self, consumer, partitions):
+        logging.debug("Joined partition {}".format(partitions))
         self.__reply_partition_assigned.set()
 
     def __check_config(self):
@@ -101,13 +104,14 @@ class Broker:
         )
         self.__producer.flush()
 
-    def send_get_command(self, pv_name, protocol):
+    def send_get_command(self, pv_name, protocol, reply_id):
         get_json_msg = {
             "command": "get",
             "serialization": "msgpack",
             "protocol": protocol.lower(),
             "pv_name": pv_name,
             "dest_topic": self.__reply_topic,
+            "reply_id": reply_id
         }
         self.send_command(json.dumps(get_json_msg))
 
@@ -132,12 +136,15 @@ class Broker:
         }
         self.send_command(json.dumps(monitor_json_msg))
     
-    def send_put_command(self, pv_name: str, value: any, protocol):
+    def send_put_command(self, pv_name: str, value: any, protocol:str, reply_id: str):
         put_value_json_msg = {
             "command": "put",
             "protocol": protocol,
             "pv_name": pv_name,
-            "value": str(value)
+            "value": str(value),
+            "reply_id": reply_id,
+            "serialization": "msgpack",
+            "dest_topic": self.__reply_topic,
         }
         self.send_command(json.dumps(put_value_json_msg))   
 

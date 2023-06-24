@@ -1,11 +1,10 @@
 typer==0.7.0
 colorama==0.4.6
 shellingham==1.5.0
-cnfluent-kafka=2.1.1
+confluent-kafka==2.1.1
 python_snappy==0.6.1
 rich==13.3.4
 msgpack==1.0.5
-dynaconf
 python-dotenv
 wheel
 setuptools

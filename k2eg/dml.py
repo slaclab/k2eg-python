@@ -1,7 +1,7 @@
 import logging
 import time
-from dynaconf import Dynaconf
 import threading
+import uuid
 from readerwriterlock import rwlock
 from confluent_kafka import Consumer, TopicPartition
 from confluent_kafka import Producer
@@ -9,7 +9,7 @@ from confluent_kafka import KafkaError
 import re
 import json
 import msgpack
-from typing import Callable
+from typing import Callable, Optional
 
 from .broker import Broker
 
@@ -41,42 +41,48 @@ class dml:
         self.__thread.join()
         self.__broker.close()
 
-    def __from_json(self, j_msg):
+    def __from_json(self, j_msg, is_a_reply: bool):
         print('__from_json')
 
-    def __from_msgpack(self, m_msg):
-        pv_name = None
+    def __from_msgpack(self, m_msg, is_a_reply: bool):
+        msg_id = None
         converted_msg = None
         decodec_msg = msgpack.loads(m_msg)
-        if isinstance(decodec_msg, dict) and len(decodec_msg)==1:
-            pv_name = list(decodec_msg.keys())[0]
+        if not isinstance(decodec_msg, dict):
+            return msg_id, converted_msg
+        
+        if is_a_reply:
+            msg_id = decodec_msg['reply_id']
             converted_msg = decodec_msg
-        return pv_name, converted_msg
+        else:
+            msg_id = list(decodec_msg.keys())[0]
+            converted_msg = decodec_msg
+        return msg_id, converted_msg
 
-    def __from_msgpack_compack(self, mc_msg):
+    def __from_msgpack_compack(self, mc_msg, is_a_reply: bool):
         print('__from_msgpack_compack')
 
-    def __decode_message(self, msg):
+    def __decode_message(self, msg, is_reply_msg):
         """ Decode single message
         """
-        pv_name = None
+        msg_id = None
         converted_msg = None
         headers = msg.headers()
         if headers is None:
             logging.error("Message without header received")
-            return pv_name, converted_msg
+            return msg_id, converted_msg
         
         for key, value in headers:
             if key == 'k2eg-ser-type':
-                st = value.decode('utf-8')
+                st = value.decode('utf-8').lower()
                 if st == "json":
-                    pv_name, converted_msg = self.__from_json(msg.value())
+                    msg_id, converted_msg = self.__from_json(msg.value(), is_reply_msg)
                 elif st == "msgpack":
-                    pv_name, converted_msg = self.__from_msgpack(msg.value())
+                    msg_id, converted_msg = self.__from_msgpack(msg.value(), is_reply_msg)
                 elif st == "msgpack-compact":
-                    pv_name, converted_msg = self.__from_msgpack_compack(msg.value())
+                    msg_id, converted_msg = self.__from_msgpack_compack(msg.value(), is_reply_msg)
                 break   
-        return pv_name, converted_msg
+        return msg_id, converted_msg
 
     def __process_message(self, pv_name, converted_msg):
         """ Process single message
@@ -109,15 +115,15 @@ class dml:
                 # good message
                 if message.topic() == self.__broker.get_reply_topic():
                     logging.info("received reply with offset {}".format(message.offset))
-                    pv_name, converted_msg = self.__decode_message(message)
-                    if pv_name == None or converted_msg == None:
+                    reply_id, converted_msg = self.__decode_message(message, True)
+                    if reply_id == None or converted_msg == None:
                         continue
                     with self.reply_wait_condition:
-                        self.reply_message[pv_name] = converted_msg
+                        self.reply_message[reply_id] = converted_msg
                         self.reply_wait_condition.notifyAll()
                 else:
                     logging.info("received monitor message with offset {} from topic {}".format(message.offset, message.topic))
-                    pv_name, converted_msg = self.__decode_message(message)
+                    pv_name, converted_msg = self.__decode_message(message, False)
                     if pv_name == None or converted_msg == None:
                         continue
                     self.__process_message(pv_name, converted_msg)
@@ -137,29 +143,85 @@ class dml:
         """ Perform the get operation
         """
         if protocol.lower() != "pva" and protocol.lower() != "ca":
-            raise ValueError("The portocol need to be one of 'pva'  'ca'")
+            raise RuntimeError("The portocol need to be one of 'pva'  'ca'")
         
         # wait for consumer joined the topic
         self.__broker.wait_for_reply_available()
-        # clear the reply message for the requested pv
-        self.reply_message[pv_name] = None
+        result = None
+        new_reply_id = str(uuid.uuid1())
         fetched = False
-        # send message to k2eg
-        self.__broker.send_get_command(
-            pv_name,
-            protocol.lower()
-        )
         # wait for response
         while(not fetched):
-            logging.info("Wait for message")
+            logging.info("Send and wait for message")
             with self.reply_wait_condition:
+                # clear the reply message for the requested pv
+                self.reply_message[new_reply_id] = None
+                 # send message to k2eg
+                self.__broker.send_get_command(
+                    pv_name,
+                    protocol.lower(),
+                    new_reply_id
+                )
                 self.reply_wait_condition.wait()
-                if self.reply_message[pv_name] == None:
+                if self.reply_message[new_reply_id] == None:
                     continue
                 fetched = True
-        return self.reply_message[pv_name][pv_name]
+                result = self.reply_message[new_reply_id][pv_name]
+                del(self.reply_message[new_reply_id])
                 
+        return result
+                
+    def put(self, pv_name: str, value: any, protocol: str = 'pva') -> tuple[int, Optional[str]]:
+        """ Set the value for a single
+        (number, number ) -> tuple[int, str[None]
 
+        Args:
+            pv_name (str): is the name of the pv
+            value (str): is the new value
+            protocol (str): the protocl of the pv, the default is pva
+        Raises:
+            ValueError: if some paramter are not valid
+        
+            return the error code and a message in case the error code is not 0
+        """
+        if not self.__check_pv_name(pv_name):
+            raise ValueError(
+                "The PV name can only containes letter (upper or lower), number ad the character ':'")
+
+        if protocol.lower() != "pva" and protocol.lower() != "ca":
+            raise ValueError("The portocol need to be one of 'pva'  'ca'")
+        
+        # wait for consumer joined the topic        
+        error = 0
+        message = None
+        fetched = False
+        self.__broker.wait_for_reply_available()
+        new_reply_id = str(uuid.uuid1())
+
+        logging.info("Send and wait for message")
+        with self.reply_wait_condition:
+            # init reply slot
+            self.reply_message[new_reply_id] = None
+                # send message to k2eg
+            self.__broker.send_put_command(
+                pv_name,
+                value,
+                protocol.lower(),
+                new_reply_id
+            )
+            while(not fetched):
+                self.reply_wait_condition.wait()
+                if self.reply_message[new_reply_id] == None:
+                    continue
+                fetched = True
+                reply_msg = self.reply_message[new_reply_id]
+                error = reply_msg['error']
+                if 'message' in reply_msg:
+                    message = reply_msg['message']
+                else:
+                    message = None
+                del(self.reply_message[new_reply_id])
+        return error, message
 
     def monitor(self, pv_name: str, handler: Callable[[any], None], protocol: str = 'pva'):
         """ Add a new monitor for pv if it is not already activated
@@ -227,28 +289,4 @@ class dml:
         self.__broker.send_stop_monitor_command(
             pv_name,
             self.__normalize_pv_name(pv_name)
-        )
-
-    def put(self, pv_name: str, value: any, protocol: str = 'pva'):
-        """ Set the value for a single pv
-
-        Args:
-            pv_name (str): is the name of the pv
-            value (str): is the new value
-            protocol (str): the protocl of the pv, the default is pva
-        Raises:
-            ValueError: if some paramter are not valid
-        """
-        if not self.__check_pv_name(pv_name):
-            raise ValueError(
-                "The PV name can only containes letter (upper or lower), number ad the character ':'")
-
-        if protocol.lower() != "pva" and protocol.lower() != "ca":
-            raise ValueError("The portocol need to be one of 'pva'  'ca'")
-        
-        # create emssage for k2eg
-        self.__broker.send_put_command(
-            pv_name,
-            value,
-            protocol
         )

@@ -23,7 +23,7 @@ def test_k2eg_monitor():
 
     k.monitor('channel:ramp:ramp', monitor_handler, 'pva')
     while received_message is None:
-        time.sleep(1)
+        time.sleep(2)
     
     assert received_message != None, "value should not be None"
     k.stop_monitor('channel:ramp:ramp')
@@ -32,17 +32,21 @@ def test_k2eg_monitor():
 def test_put():
     k = k2eg('test')
     try:
-        k.put("variable:a", 0)
-        k.put("variable:b", 0)
+        res_put = k.put("variable:a", 0)
+        assert res_put[0] == 0, "putshould succeed"
+        res_put = k.put("variable:b", 0)
+        assert res_put[0] == 0, "putshould succeed"
         time.sleep(2)
-        res = k.get("variable:sum")
-        assert res['value'] == 0, "value should not be 0"
-        k.put("variable:a", 2)
-        k.put("variable:b", 2)
+        res_get = k.get("variable:sum")
+        assert res_get['value'] == 0, "value should not be 0"
+        res_put = k.put("variable:a", 2)
+        assert res_put[0] == 0, "putshould succeed"
+        res_put = k.put("variable:b", 2)
+        assert res_put[0] == 0, "putshould succeed"
         #give some time to ioc to update
         time.sleep(2)
-        res = k.get("variable:sum")
-        assert res['value'] == 4, "value should not be 0"
+        res_get = k.get("variable:sum")
+        assert res_get['value'] == 4, "value should not be 0"
     finally:
         k.close()
     

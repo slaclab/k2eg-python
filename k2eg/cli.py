@@ -6,7 +6,7 @@ app = typer.Typer()
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"k2eg v01")
+        typer.echo("k2eg v01")
         raise typer.Exit()
 
 @app.callback()

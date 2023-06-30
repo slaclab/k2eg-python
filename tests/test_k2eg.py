@@ -4,13 +4,13 @@ import time
 def test_k2eg_get():
     k = k2eg('test')
     get_value = k.get('channel:ramp:ramp', 'pva')
-    assert get_value != None, "value should not be None"
+    assert get_value is not None, "value should not be None"
     k.close()
 
 def test_k2eg_get_default_protocol():
     k = k2eg('test')
     get_value = k.get('channel:ramp:ramp')
-    assert get_value != None, "value should not be None"
+    assert get_value is not None, "value should not be None"
     k.close()
 
 def test_k2eg_monitor():
@@ -25,7 +25,7 @@ def test_k2eg_monitor():
     while received_message is None:
         time.sleep(2)
     
-    assert received_message != None, "value should not be None"
+    assert received_message is not None, "value should not be None"
     k.stop_monitor('channel:ramp:ramp')
     k.close()
 

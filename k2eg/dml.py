@@ -1,13 +1,9 @@
 import logging
-import time
 import threading
 import uuid
 from readerwriterlock import rwlock
-from confluent_kafka import Consumer, TopicPartition
-from confluent_kafka import Producer
 from confluent_kafka import KafkaError
 import re
-import json
 import msgpack
 from typing import Callable, Optional
 
@@ -76,11 +72,17 @@ class dml:
             if key == 'k2eg-ser-type':
                 st = value.decode('utf-8').lower()
                 if st == "json":
-                    msg_id, converted_msg = self.__from_json(msg.value(), is_reply_msg)
+                    msg_id, converted_msg = self.__from_json(
+                        msg.value(), is_reply_msg
+                        )
                 elif st == "msgpack":
-                    msg_id, converted_msg = self.__from_msgpack(msg.value(), is_reply_msg)
+                    msg_id, converted_msg = self.__from_msgpack(
+                        msg.value(), is_reply_msg
+                        )
                 elif st == "msgpack-compact":
-                    msg_id, converted_msg = self.__from_msgpack_compack(msg.value(), is_reply_msg)
+                    msg_id, converted_msg = self.__from_msgpack_compack(
+                        msg.value(), is_reply_msg
+                        )
                 break   
         return msg_id, converted_msg
 
@@ -91,7 +93,10 @@ class dml:
             if pv_name not in self.__monitor_pv_handler:
                 return
             self.__monitor_pv_handler[pv_name](converted_msg)
-            logging.debug('read message sent to {} hanlder'.format(self.__monitor_pv_handler[pv_name]))
+            logging.debug(
+                'read message sent to {} hanlder'
+                    .format(self.__monitor_pv_handler[pv_name])
+            )
 
     def __consumer_handler(self):
         """ Consume message form kafka consumer
@@ -108,7 +113,10 @@ class dml:
             if message.error():
                 if message.error().code() == KafkaError._PARTITION_EOF:
                     # End of partition event
-                    logging.error('{} [{}]reached end at offset {}'.format(message.topic(), message.partition(), message.offset()))
+                    logging.error(
+                        '{} [{}]reached end at offset {}'
+                        .format(message.topic(), message.partition(), message.offset())
+                    )
                 elif message.error():
                     logging.error(message.error())
             else:
@@ -122,9 +130,12 @@ class dml:
                         self.reply_message[reply_id] = converted_msg
                         self.reply_wait_condition.notifyAll()
                 else:
-                    logging.info("received monitor message with offset {} from topic {}".format(message.offset, message.topic))
+                    logging.info(
+                        "received monitor message with offset {} from topic {}"
+                        .format(message.offset, message.topic)
+                    )
                     pv_name, converted_msg = self.__decode_message(message, False)
-                    if pv_name == None or converted_msg == None:
+                    if pv_name is None or converted_msg is None:
                         continue
                     self.__process_message(pv_name, converted_msg)
                 self.__broker.commit_current_fetched_message()
@@ -163,7 +174,7 @@ class dml:
                     new_reply_id
                 )
                 self.reply_wait_condition.wait()
-                if self.reply_message[new_reply_id] == None:
+                if self.reply_message[new_reply_id] is None:
                     continue
                 fetched = True
                 result = self.reply_message[new_reply_id][pv_name]
@@ -171,7 +182,7 @@ class dml:
                 
         return result
                 
-    def put(self, pv_name: str, value: any, protocol: str = 'pva') -> tuple[int, Optional[str]]:
+    def put(self, pv_name: str, value: any, protocol: str = 'pva') -> tuple[int, Optional[str]]:  # noqa: E501
         """ Set the value for a single
         (number, number ) -> tuple[int, str[None]
 
@@ -186,7 +197,9 @@ class dml:
         """
         if not self.__check_pv_name(pv_name):
             raise ValueError(
-                "The PV name can only containes letter (upper or lower), number ad the character ':'")
+                "The PV name can only containes letter (upper or lower)"
+                ", number ad the character ':'"
+            )
 
         if protocol.lower() != "pva" and protocol.lower() != "ca":
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
@@ -211,7 +224,7 @@ class dml:
             )
             while(not fetched):
                 self.reply_wait_condition.wait()
-                if self.reply_message[new_reply_id] == None:
+                if self.reply_message[new_reply_id] is None:
                     continue
                 fetched = True
                 reply_msg = self.reply_message[new_reply_id]
@@ -223,7 +236,7 @@ class dml:
                 del(self.reply_message[new_reply_id])
         return error, message
 
-    def monitor(self, pv_name: str, handler: Callable[[any], None], protocol: str = 'pva'):
+    def monitor(self, pv_name: str, handler: Callable[[any], None], protocol: str = 'pva'):  # noqa: E501
         """ Add a new monitor for pv if it is not already activated
         Parameters
                 ----------
@@ -238,12 +251,13 @@ class dml:
         """
         if not self.__check_pv_name(pv_name):
             raise ValueError(
-                "The PV name can only containes letter (upper or lower), number ad the character ':'")
+                "The PV name can only containes letter (upper or lower)"
+                ", number ad the character ':'"
+            )
 
         if protocol.lower() != "pva" and protocol.lower() != "ca":
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
 
-        topics = []
         with self.__lock.gen_wlock():
             if pv_name in self.__monitor_pv_handler:
                 logging.info(
@@ -252,7 +266,8 @@ class dml:
             self.__monitor_pv_handler[pv_name] = handler
             self.__broker.add_topic(self.__normalize_pv_name(pv_name))
 
-        # send message to k2eg from activate (only for last topics) monitor(just in case it is not already activated)
+        # send message to k2eg from activate (only for last topics) 
+        # monitor(just in case it is not already activated)
         self.__broker.send_start_monitor_command(
             pv_name,
             protocol,
@@ -274,9 +289,10 @@ class dml:
         """
         if not self.__check_pv_name(pv_name):
             raise ValueError(
-                "The PV name can only containes letter (upper or lower), number ad the character ':'")
+                "The PV name can only containes letter (upper or lower)"
+                ", number ad the character ':'"
+            )
 
-        topics = []
         with self.__lock.gen_wlock():
             if pv_name not in self.__monitor_pv_handler:
                 logging.info(
@@ -285,7 +301,8 @@ class dml:
             del self.__monitor_pv_handler[pv_name]
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
 
-        # send message to k2eg from activate (only for last topics) monitor(just in case it is not already activated)
+        # send message to k2eg from activate (only for last topics) 
+        # monitor(just in case it is not already activated)
         self.__broker.send_stop_monitor_command(
             pv_name,
             self.__normalize_pv_name(pv_name)

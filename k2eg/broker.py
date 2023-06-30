@@ -9,7 +9,7 @@ from confluent_kafka import Consumer, TopicPartition
 from confluent_kafka import Producer
 
 class Broker:
-    def __init__(self, environment_id: str, enviroment_set: str = 'DEFAULT'):
+    def __init__(self, environment_id: str, enviroment_set: str = 'DEFAULT', group_name: str =  str(uuid.uuid1())):
         # Get the current directory of the script
         current_configuration_dir = os.getenv(
             'K2EG_PYTHON_CONFIGURATION_PATH_FOLDER', 
@@ -32,7 +32,7 @@ class Broker:
             'bootstrap.servers': self.__config.get(
                 self.__enviroment_set, 'kafka_broker_url'
                 ), 
-            'group.id': str(uuid.uuid1()),  # Change this to your group
+            'group.id': group_name,
             'auto.offset.reset': 'latest',
             #'debug': 'consumer,cgrp,topic,fetch',
         }

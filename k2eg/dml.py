@@ -11,8 +11,11 @@ from .broker import Broker
 
 class dml:
     """K2EG client"""
-    def __init__(self, environment_id:str):
-        self.__broker = Broker(environment_id)
+    def __init__(self, environment_id:str, app_name: str = str(uuid.uuid1())):
+        self.__broker = Broker(
+            environment_id = environment_id,
+            group_name = app_name
+            )
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()
         

@@ -2,19 +2,19 @@ from k2eg.dml import dml as k2eg
 import time
 
 def test_k2eg_get():
-    k = k2eg('test')
+    k = k2eg('test', 'app-test')
     get_value = k.get('channel:ramp:ramp', 'pva')
     assert get_value is not None, "value should not be None"
     k.close()
 
 def test_k2eg_get_default_protocol():
-    k = k2eg('test')
+    k = k2eg('test', 'app-test')
     get_value = k.get('channel:ramp:ramp')
     assert get_value is not None, "value should not be None"
     k.close()
 
 def test_k2eg_monitor():
-    k = k2eg('test')
+    k = k2eg('test', 'app-test')
     received_message = None
 
     def monitor_handler(new_value):
@@ -30,7 +30,7 @@ def test_k2eg_monitor():
     k.close()
 
 def test_put():
-    k = k2eg('test')
+    k = k2eg('test', 'app-test')
     try:
         res_put = k.put("variable:a", 0)
         assert res_put[0] == 0, "put should succeed"

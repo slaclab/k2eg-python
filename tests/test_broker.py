@@ -24,7 +24,7 @@ def my_fixture():
             break
         time.sleep(1)
     else:
-        print(f"Topic was not created within the timeout period.")
+        print("Topic was not created within the timeout period.")
 
 def test_broker_bad_conf():
     with pytest.raises(ValueError, 

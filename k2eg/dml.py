@@ -109,7 +109,8 @@ class dml:
         while self.__consume_data:
         #for msg in self.__consumer:
             message = self.__broker.get_next_message()
-            if message is None: continue
+            if message is None: 
+                continue
             if message.error():
                 if message.error().code() == KafkaError._PARTITION_EOF:
                     # End of partition event
@@ -124,7 +125,7 @@ class dml:
                 if message.topic() == self.__broker.get_reply_topic():
                     logging.info("received reply with offset {}".format(message.offset))
                     reply_id, converted_msg = self.__decode_message(message, True)
-                    if reply_id == None or converted_msg == None:
+                    if reply_id is None or converted_msg is None:
                         continue
                     with self.reply_wait_condition:
                         self.reply_message[reply_id] = converted_msg

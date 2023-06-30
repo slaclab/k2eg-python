@@ -12,13 +12,13 @@ from confluent_kafka import KafkaError
 class Broker:
     def __init__(self, environment_id: str, enviroment_set: str = 'DEFAULT'):
         # Get the current directory of the script
-        current_dir = os.path.dirname(os.path.realpath(__file__))
+        current_configuration_dir = os.getenv('K2EG_PYTHON_CONFIGURATION_PATH_FOLDER', os.path.dirname(os.path.realpath(__file__))) 
         self.__enviroment_set = enviroment_set
         # Create a new ConfigParser object
         self.__config = configparser.ConfigParser()
 
         # Read the configuration file
-        self.__config.read(os.path.join(current_dir, 'environment/{}.ini'.format(environment_id)))
+        self.__config.read(os.path.join(current_configuration_dir, 'environment/{}.ini'.format(environment_id)))
 
         self.__check_config()
 

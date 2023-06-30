@@ -33,18 +33,18 @@ def test_put():
     k = k2eg('test')
     try:
         res_put = k.put("variable:a", 0)
-        assert res_put[0] == 0, "putshould succeed"
+        assert res_put[0] == 0, "put should succeed"
         res_put = k.put("variable:b", 0)
-        assert res_put[0] == 0, "putshould succeed"
-        time.sleep(2)
+        assert res_put[0] == 0, "put should succeed"
+        time.sleep(1)
         res_get = k.get("variable:sum")
         assert res_get['value'] == 0, "value should not be 0"
         res_put = k.put("variable:a", 2)
-        assert res_put[0] == 0, "putshould succeed"
+        assert res_put[0] == 0, "put should succeed"
         res_put = k.put("variable:b", 2)
-        assert res_put[0] == 0, "putshould succeed"
+        assert res_put[0] == 0, "put should succeed"
         #give some time to ioc to update
-        time.sleep(2)
+        time.sleep(1)
         res_get = k.get("variable:sum")
         assert res_get['value'] == 4, "value should not be 0"
     finally:

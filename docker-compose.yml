@@ -14,7 +14,8 @@ services:
         - -c
         - |
           wait
-          pytest -rP
+          sleep 20
+          pytest -o log_cli=true
 
     environment:
       WAIT_HOSTS: kafka:9092
@@ -22,21 +23,19 @@ services:
   epics_pva:
     image: ghcr.io/bisegni/epics-base-docker-image:main
     volumes:
-      - ../tests/epics-test.db:/db/softioc.db
+      - ./tests/epics-test.db:/db/softioc.db
 
   k2eg:
     image: ghcr.io/slaclab/k2eg/ubuntu:latest
     pull_policy: always
-    entrypoint: k2eg
+    command: 
+        - /bin/bash
+        - -c
+        - |
+          sleep 10
+          k2eg --log-level=debug --cmd-input-topic=cmd-in-topic --sub-server-address=kafka:9092  --sub-group-id=eed-k2eg --pub-server-address=kafka:9092 --metric-enable=true
     depends_on: 
       - kafka
-    command: [
-      "--log-level=debug", 
-      "--cmd-input-topic=cmd-in-topic", 
-      "--sub-server-address=kafka:9092", 
-      "--sub-group-id=eed-k2eg", 
-      "--pub-server-address=kafka:9092",
-      "--metric-enable=true"]
   
   kafka:
     image: docker.io/bitnami/kafka:3.4
@@ -51,6 +50,3 @@ services:
       - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
-
-# volumes:
-#   kafka-data:

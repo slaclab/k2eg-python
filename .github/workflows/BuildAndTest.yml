@@ -41,7 +41,7 @@ jobs:
         - name: Execute Tests
           run: |
             docker compose build k2eg-python
-            docker compose up --attach k2eg-python  --exit-code-from k2eg-python
+            docker compose up --exit-code-from k2eg-python
         - name: Clean resources
           if: always()
           run: |

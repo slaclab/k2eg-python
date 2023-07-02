@@ -29,7 +29,7 @@ jobs:
           
   test_bexecute_test:
     runs-on: ubuntu-latest
-    container: docker:23.0.0-cli
+    # container: docker:23.0.0-cli
     needs:
       - build_and_test
     steps:
@@ -40,11 +40,9 @@ jobs:
           run: echo "${{ secrets.DOCKER_LOGIN_SECRET }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
         - name: Execute Tests
           run: |
+            docker compose build k2eg-python
             docker compose up --attach k2eg-python  --exit-code-from k2eg-python
         - name: Clean resources
           if: always()
           run: |
             docker compose down -v --rmi all
-        - uses: ouzi-dev/commit-status-updater@v2
-          with:
-            status: success

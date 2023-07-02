@@ -14,7 +14,7 @@ services:
         - -c
         - |
           wait
-          pytest
+          pytest -rP
 
     environment:
       WAIT_HOSTS: kafka:9092

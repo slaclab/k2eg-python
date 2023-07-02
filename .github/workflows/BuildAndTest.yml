@@ -3,8 +3,7 @@ name: Python package
 on: [push]
 
 jobs:
-  build:
-
+  build_and_test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -27,6 +26,23 @@ jobs:
           ruff --format=github --select=E9,F63,F7,F82 --target-version=py37 .
           # default set of ruff rules with GitHub Annotations
           ruff --format=github --target-version=py37 .
-      # - name: Test with pytest
-      #   run: |
-      #     pytest
+          
+  test_bexecute_test:
+    runs-on: ubuntu-latest
+    container: docker:23.0.0-cli
+    needs:
+      - build_and_test
+    steps:
+        # Downloads a copy of the code in your repository before running CI tests
+        - name: Check out repository code
+          uses: actions/checkout@v3
+        - name: Execute Tests
+          run: |
+            docker compose up --attach k2eg-python  --exit-code-from k2eg-python
+        - name: Clean resources
+          if: always()
+          run: |
+            docker compose down -v --rmi all
+        - uses: ouzi-dev/commit-status-updater@v2
+          with:
+            status: success

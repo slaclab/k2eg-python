@@ -6,6 +6,7 @@ from confluent_kafka.admin import AdminClient, NewTopic
 
 @pytest.fixture(scope='session', autouse=True)
 def my_fixture():
+    print("Prepare kafka topics for test.")
     # Setup code goes here
     admin_client = AdminClient({
         "bootstrap.servers": "kafka:9092"
@@ -20,7 +21,7 @@ def my_fixture():
     for i in range(10):
         cluster_topics = admin_client.list_topics().topics
         if "reply-topic-xyz" in cluster_topics and  "cmd-in-topic" in cluster_topics:
-            print("Topicshas been created.")
+            print("Topics has been created.")
             break
         time.sleep(1)
     else:

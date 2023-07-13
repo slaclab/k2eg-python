@@ -1,4 +1,4 @@
-name: Python package
+name: Build and Test
 
 on: 
   pull_request:
@@ -32,8 +32,8 @@ jobs:
           ruff --format=github --select=E9,F63,F7,F82 --target-version=py37 .
           # default set of ruff rules with GitHub Annotations
           ruff --format=github --target-version=py37 .
-          
-  test_bexecute_test:
+             
+  test_execute_test:
     runs-on: ubuntu-latest
     # container: docker:23.0.0-cli
     needs:

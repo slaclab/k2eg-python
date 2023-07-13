@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  build_and_test:
+  build_and_lint:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -32,8 +32,8 @@ jobs:
           ruff --format=github --select=E9,F63,F7,F82 --target-version=py37 .
           # default set of ruff rules with GitHub Annotations
           ruff --format=github --target-version=py37 .
-             
-  test_execute_test:
+
+  execute_test:
     runs-on: ubuntu-latest
     # container: docker:23.0.0-cli
     needs:

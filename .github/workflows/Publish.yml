@@ -1,0 +1,44 @@
+name: Publish
+
+on:
+  push:
+    # branches: [main]
+    tags:
+      - v*
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python "3.9"
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v0
+        with:
+          versionSpec: '5.x'
+      - name: Find Version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v0
+        with:
+          useConfigFile: true
+      - name: Manage Version
+        run: |
+          echo "Modify pyproject.toml for with version number \"$GitVersion_Major.$GitVersion_Minor.$GitVersion_Patch\""
+          sed -i "s#^version = \"0.0.0\"#version = \"$GitVersion_Major.$GitVersion_Minor.$GitVersion_Patch\"#" build.gradle
+          cat build.gradle
+      - name: Install dependencies
+        run: |
+          cd cli
+          python -m pip install --upgrade pip
+          pip install build twine
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Build
+        run: |
+          cd cli
+          python -m build .
+      - name: Upload on TestPyPi
+        run: |
+          cd cli
+          twine upload -u ${{ secrets.TWINE_USERNAME }} -p ${{ secrets.TWINE_PASSWORD }}  --verbose --skip-existing -r  testpypi dist/*

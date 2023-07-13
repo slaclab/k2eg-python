@@ -29,8 +29,8 @@ jobs:
       - name: Manage Version
         run: |
           echo "Modify pyproject.toml for with version number \"$GitVersion_Major.$GitVersion_Minor.$GitVersion_Patch\""
-          sed -i "s#^version = \"0.0.0\"#version = \"$GitVersion_Major.$GitVersion_Minor.$GitVersion_Patch\"#" build.gradle
-          cat build.gradle
+          sed -i "s#^version = \"0.0.0\"#version = \"$GitVersion_Major.$GitVersion_Minor.$GitVersion_Patch\"#" pyproject.toml
+          cat pyproject.toml
       - name: Install dependencies
         run: |
           cd cli

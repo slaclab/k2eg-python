@@ -214,10 +214,10 @@ class dml:
                 error = self.reply_message[new_reply_id]['error']
                 if 'message' in self.reply_message:
                     message = self.reply_message['message']
-                if error is 0:
+                if error == 0:
                     result = self.reply_message[new_reply_id][pv_name]
                 del(self.reply_message[new_reply_id])
-                if error is not 0:
+                if error != 0:
                     raise OperationError(error, message)
         return result
                 
@@ -278,7 +278,7 @@ class dml:
                 if 'message' in reply_msg:
                     message = reply_msg['message']   
                 del(self.reply_message[new_reply_id])
-                if error is not 0:
+                if error != 0:
                     raise OperationError(error, message)
 
     def monitor(self, pv_name: str, handler: Callable[[any], None], protocol: str = 'pva'):  # noqa: E501

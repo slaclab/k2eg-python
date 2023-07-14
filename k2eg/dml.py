@@ -9,6 +9,19 @@ from typing import Callable, Optional
 
 from .broker import Broker
 
+class OperationTimeout(Exception):
+    """Exception raised when the tmeout is epired on operation"""
+    def __init__(self, message):            
+        # Call the base class constructor with the parameters it needs
+        super().__init__(message)
+
+class OperationError(Exception):
+    """Exception raised when the tmeout is epired on operation"""
+    def __init__(self, error, message):            
+        # Call the base class constructor with the parameters it needs
+        super().__init__(message)
+        self.error = error
+
 class dml:
     """K2EG client"""
     def __init__(self, environment_id:str, app_name: str = str(uuid.uuid1())):
@@ -154,9 +167,16 @@ class dml:
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
-    def get(self, pv_name: str, protocol: str = 'pva'):
+    def get(self, pv_name: str, protocol: str = 'pva', timeout: float = None):
         """ Perform the get operation
+            raise OperationTimeout when timeout has expired
         """
+        if not self.__check_pv_name(pv_name):
+            raise ValueError(
+                "The PV name can only containes letter (upper or lower)"
+                ", number ad the character ':'"
+            )
+        
         if protocol.lower() != "pva" and protocol.lower() != "ca":
             raise RuntimeError("The portocol need to be one of 'pva'  'ca'")
         
@@ -177,23 +197,37 @@ class dml:
                     protocol.lower(),
                     new_reply_id
                 )
-                self.reply_wait_condition.wait()
+                got_it = self.reply_wait_condition.wait(timeout)
+                if(got_it is False):
+                    # the timeout is expired, so delete the answer slot
+                    # and rise exception
+                    del(self.reply_message[new_reply_id])
+                    raise OperationTimeout(
+                        "Timeout during get orpation for {}".format(pv_name)
+                        )
                 if self.reply_message[new_reply_id] is None:
                     continue
                 fetched = True
-                result = self.reply_message[new_reply_id][pv_name]
+
+                message = None
+                result = None
+                error = self.reply_message[new_reply_id]['error']
+                if 'message' in self.reply_message:
+                    message = self.reply_message['message']
+                if error is 0:
+                    result = self.reply_message[new_reply_id][pv_name]
                 del(self.reply_message[new_reply_id])
-                
+                if error is not 0:
+                    raise OperationError(error, message)
         return result
                 
-    def put(self, pv_name: str, value: any, protocol: str = 'pva') -> tuple[int, Optional[str]]:  # noqa: E501
-        """ Set the value for a single
-        (number, number ) -> tuple[int, str[None]
-
+    def put(self, pv_name: str, value: any, protocol: str = 'pva', timeout: float = None):  # noqa: E501
+        """ Set the value for a single pv
         Args:
-            pv_name (str): is the name of the pv
-            value (str): is the new value
-            protocol (str): the protocl of the pv, the default is pva
+            pv_name   (str): is the name of the pv
+            value     (str): is the new value
+            protocol  (str): the protocl of the pv, the default is pva
+            timeout (float): the timeout, in second or fraction
         Raises:
             ValueError: if some paramter are not valid
         
@@ -227,18 +261,25 @@ class dml:
                 new_reply_id
             )
             while(not fetched):
-                self.reply_wait_condition.wait()
+                got_it = self.reply_wait_condition.wait(timeout)
+                if(got_it is False):
+                    # the timeout is expired, so delete the answer slot
+                    # and rise exception
+                    del(self.reply_message[new_reply_id])
+                    raise OperationTimeout(
+                        "Timeout during put orpation for {}".format(pv_name)
+                        )
                 if self.reply_message[new_reply_id] is None:
                     continue
                 fetched = True
                 reply_msg = self.reply_message[new_reply_id]
+                message = None
                 error = reply_msg['error']
                 if 'message' in reply_msg:
-                    message = reply_msg['message']
-                else:
-                    message = None
+                    message = reply_msg['message']   
                 del(self.reply_message[new_reply_id])
-        return error, message
+                if error is not 0:
+                    raise OperationError(error, message)
 
     def monitor(self, pv_name: str, handler: Callable[[any], None], protocol: str = 'pva'):  # noqa: E501
         """ Add a new monitor for pv if it is not already activated

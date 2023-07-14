@@ -5,7 +5,7 @@ from readerwriterlock import rwlock
 from confluent_kafka import KafkaError
 import re
 import msgpack
-from typing import Callable, Optional
+from typing import Callable
 
 from .broker import Broker
 

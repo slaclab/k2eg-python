@@ -1,5 +1,6 @@
 import click
 from k2eg import dml as K2eg
+from k2eg.dml import OperationTimeout, OperationError
 import k2eg
 
 @click.command()
@@ -12,12 +13,16 @@ def get(k2eg: k2eg, pv_name: str, protocol: str):
     """
     #k2eg.with_for_backends()
     click.echo("GET on {} with protocol {}".format( pv_name, protocol))
-    # k = k2eg()
-    # try:
-    #     r = k.get(pv_name, protocol)
-    #     print(r)
-    # finally:
-    #     k.close()
+    try:
+        r = k2eg.get(pv_name, protocol)
+        print(r)
+    except OperationError as e:
+        pass
+    except OperationTimeout as e:
+        pass
+    except ValueError as e:
+        pass
+
 
 # def signal_handler(sig, frame):
 #     print('You pressed Ctrl+C!')

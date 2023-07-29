@@ -182,7 +182,7 @@ class dml:
             )
         
         if protocol.lower() != "pva" and protocol.lower() != "ca":
-            raise RuntimeError("The portocol need to be one of 'pva'  'ca'")
+            raise ValueError("The portocol need to be one of 'pva'  'ca'")
         
         # wait for consumer joined the topic
         self.__broker.wait_for_reply_available()

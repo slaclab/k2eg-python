@@ -5,8 +5,8 @@ import time
 import logging
 import threading
 import configparser
-from confluent_kafka import Consumer, TopicPartition
-from confluent_kafka import Producer
+from confluent_kafka import Consumer, TopicPartition, Producer, KafkaError
+from confluent_kafka.admin import AdminClient, NewTopic, KafkaException
 
 class Broker:
     def __init__(
@@ -48,11 +48,27 @@ class Broker:
             #'debug': 'consumer,cgrp,topic,fetch',
         }
         self.__producer = Producer(config_producer)
+        self.__admin = AdminClient({'bootstrap.servers': self.__config.get(
+                self.__enviroment_set, 'kafka_broker_url'
+                )})
         self.__reply_topic = self.__config.get(self.__enviroment_set, 'reply_topic')
         self.__reply_partition_assigned = threading.Event()
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
-        self.reset_topic_offset_in_time(self.__reply_topic, int(time.time() * 1000))
+        self.__create_default_topics()
+
+    def __create_default_topics(self):
+        new_topics = [NewTopic(self.__reply_topic, num_partitions=1, replication_factor=1)]
+        fs = self.__admin.create_topics(new_topics)
+        for topic, f in fs.items():
+            try:
+                f.result()  # The result itself is None
+                logging.debug("Topic {} created".format(topic))
+            except KafkaException as e:
+                if e.args[0].code() == KafkaError.TOPIC_ALREADY_EXISTS:
+                    logging.debug("Topic {} already exists".format(topic))
+                else:
+                    logging.FATAL("Failed to create topic {}: {}".format(topic, e))
 
     def __on_assign(self, consumer, partitions):
         logging.debug("Joined partition {}".format(partitions))
@@ -75,6 +91,9 @@ class Broker:
         """ Wait untile the consumer has joined the reply topic
         """
         self.__reply_partition_assigned.wait()
+
+    def reset_reply_topic_to_ts(self, timestamp):
+        self.reset_topic_offset_in_time(self.__reply_topic, timestamp)
 
     def reset_topic_offset_in_time(self, topic, timestamp):
         """ Set the topic offset to the end of messages

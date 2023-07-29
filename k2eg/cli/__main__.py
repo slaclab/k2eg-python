@@ -39,8 +39,6 @@ def cli(ctx, environment, log_level):
     # allocate k2eg in 
     logging.debug("K2g initilizing")
     ctx.obj = k2eg_instance = k2eg(environment)
-    logging.debug("K2g wait for backends")
-    k2eg_instance.with_for_backends()
     pass
 
 @cli.result_callback()

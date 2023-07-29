@@ -8,19 +8,19 @@
             "name": "Call Get",
             "type": "python",
             "request": "launch",
-            "module": "k2eg",
+            "module": "k2eg.cli",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["get", "channel:ramp:ramp"]
+            "args": ["-l", "debug", "get", "pv:name"]
         },
         {
             "name": "Call Monitor",
             "type": "python",
             "request": "launch",
-            "module": "k2eg",
+            "module": "k2eg.cli",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["monitor", "channel:ramp:ramp"]
+            "args": ["-l", "debug", "monitor", "pv:name"]
         }
     ]
 }

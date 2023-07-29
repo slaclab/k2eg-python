@@ -167,6 +167,10 @@ class dml:
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
+    def with_for_backends(self):
+        logging.debug("Waiting for join kafka reply topic")
+        self.__broker.wait_for_reply_available()
+
     def get(self, pv_name: str, protocol: str = 'pva', timeout: float = None):
         """ Perform the get operation
             raise OperationTimeout when timeout has expired

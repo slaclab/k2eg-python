@@ -14,8 +14,6 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "typer",
-    "colorama",
     "shellingham",
     "confluent-kafka",
     "python_snappy",
@@ -23,7 +21,9 @@ dependencies = [
     "msgpack",
     "dynaconf",
     "readerwriterlock",
-    "python-dotenv"
+    "python-dotenv",
+    "click",
+    "click-loglevel"
 ]
 
 [project.scripts]

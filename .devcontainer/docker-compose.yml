@@ -48,9 +48,6 @@ services:
   
   kafka:
     image: docker.io/bitnami/kafka:3.4
-    ports:
-      - "9092:9092"
-      - '9094:9094'
     environment:
       - ALLOW_PLAINTEXT_LISTENER=yes
       - KAFKA_CFG_KRAFT_BROKER_ID=1

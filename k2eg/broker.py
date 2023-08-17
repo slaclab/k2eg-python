@@ -1,7 +1,6 @@
 import json
 import os
 import uuid
-import time
 import logging
 import threading
 import configparser
@@ -27,7 +26,7 @@ class Broker:
         self.__config.read(
             os.path.join(
             current_configuration_dir, 
-            'environment/{}.ini'.format(environment_id))
+            f'environment/{environment_id}.ini')
             )
 
         self.__check_config()
@@ -63,15 +62,15 @@ class Broker:
         for topic, f in fs.items():
             try:
                 f.result()  # The result itself is None
-                logging.debug("Topic {} created".format(topic))
+                logging.debug(f"Topic {topic} created")
             except KafkaException as e:
                 if e.args[0].code() == KafkaError.TOPIC_ALREADY_EXISTS:
-                    logging.debug("Topic {} already exists".format(topic))
+                    logging.debug(f"Topic {topic} already exists")
                 else:
-                    logging.FATAL("Failed to create topic {}: {}".format(topic, e))
+                    logging.FATAL(f"Failed to create topic {topic}: {e}")
 
     def __on_assign(self, consumer, partitions):
-        logging.debug("Joined partition {}".format(partitions))
+        logging.debug(f"Joined partition {partitions}")
         self.__reply_partition_assigned.set()
 
     def __check_config(self):
@@ -122,7 +121,7 @@ class Broker:
     def add_topic(self, new_topic):
         if new_topic == self.__reply_topic:
             raise ValueError(
-                'The topic name {} cannot be used'.format(self.__reply_topic)
+                f'The topic name {self.__reply_topic} cannot be used'
                 )
         if new_topic not in self.__subribed_topics:
             self.__subribed_topics.append(new_topic)
@@ -132,7 +131,7 @@ class Broker:
     def remove_topic(self, topic_to_remove):
         if topic_to_remove == self.__reply_topic:
             raise ValueError(
-                'The topic name {} cannot be used'.format(self.__reply_topic)
+                f'The topic name {self.__reply_topic} cannot be used'
                 )
         if topic_to_remove in self.__subribed_topics:
             self.__subribed_topics.remove(topic_to_remove)

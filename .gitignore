@@ -6,3 +6,4 @@ k2eg/__pycache__*
 .eggs
 dist
 k2eg.egg-info
+k2eg/cli/__pycache__*

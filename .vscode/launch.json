@@ -11,7 +11,7 @@
             "module": "k2eg.cli",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["-l", "debug", "get", "pv:name"]
+            "args": ["-l", "debug", "get", "channel:ramp:ramp"]
         },
         {
             "name": "Call Monitor",
@@ -20,7 +20,7 @@
             "module": "k2eg.cli",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["-l", "debug", "monitor", "pv:name"]
+            "args": ["-l", "debug", "monitor", "channel:ramp:ramp"]
         }
     ]
 }

@@ -139,7 +139,7 @@ class dml:
             else:
                 # good message
                 if message.topic() == self.__broker.get_reply_topic():
-                    logging.info("received reply with offset {}".format(message.offset))
+                    logging.debug("received reply with offset {}".format(message.offset()))
                     reply_id, converted_msg = self.__decode_message(message, True)
                     if reply_id is None or converted_msg is None:
                         continue
@@ -147,9 +147,9 @@ class dml:
                         self.reply_message[reply_id] = converted_msg
                         self.reply_wait_condition.notifyAll()
                 else:
-                    logging.info(
+                    logging.debug(
                         "received monitor message with offset {} from topic {}"
-                        .format(message.offset, message.topic)
+                        .format(message.offset(), message.topic())
                     )
                     pv_name, converted_msg = self.__decode_message(message, False)
                     if pv_name is None or converted_msg is None:
@@ -216,8 +216,8 @@ class dml:
                 message = None
                 result = None
                 error = self.reply_message[new_reply_id]['error']
-                if 'message' in self.reply_message:
-                    message = self.reply_message['message']
+                if 'message' in self.reply_message[new_reply_id]:
+                    message = self.reply_message[new_reply_id]['message']
                 if error == 0:
                     result = self.reply_message[new_reply_id][pv_name]
                 del(self.reply_message[new_reply_id])

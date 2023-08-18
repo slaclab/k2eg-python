@@ -16,7 +16,7 @@ evt = threading.Event()
               default=[], multiple=True, 
               type=str, help='structure element to include')
 @click.pass_obj
-def monitor(k2eg: k2eg, pv_name: str, protocol: str, timeout: int, filter):
+def monitor(ctx_obj: dict, pv_name: str, protocol: str, timeout: int, filter):
     """
     Execute a monitor operation from k2eg
     """
@@ -34,11 +34,12 @@ def monitor(k2eg: k2eg, pv_name: str, protocol: str, timeout: int, filter):
             logging.error(f'Invalid key found on monitor package for {pv_name}')
 
     signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        k2eg.monitor(pv_name, monitor_handler, protocol)
+        ctx_obj['dml'].monitor(pv_name, monitor_handler, protocol)
         evt.wait()
+    except KeyboardInterrupt:
+        evt.set()
     except OperationError as e:
         click.echo(f"Remote error: {e.error} with message: {e.args[0]}")
     except OperationTimeout:
@@ -48,7 +49,7 @@ def monitor(k2eg: k2eg, pv_name: str, protocol: str, timeout: int, filter):
         print(f"Bad value {e.arg[0]}")
         pass
     finally:
-        k2eg.stop_monitor(pv_name)
+        ctx_obj['dml'].stop_monitor(pv_name)
 
 def signal_handler(sig, frame):
     evt.set()

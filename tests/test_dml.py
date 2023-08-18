@@ -1,35 +1,44 @@
-from k2eg.dml import OperationError, dml as k2eg
-from k2eg.dml import OperationTimeout
+from k2eg.broker import Broker
+from k2eg.dml import dml
 import time
 import pytest
 
 def test_k2eg_get():
-    k = k2eg('test', 'app-test')
+    b = Broker('test')
+    k = dml(b, 'app-test')
     get_value = k.get('channel:ramp:ramp', 'pva')
     assert get_value is not None, "value should not be None"
     k.close()
+    b.close()
 
 def test_k2eg_get_timeout():
-    k = k2eg('test', 'app-test')
-    with pytest.raises(OperationTimeout, 
+    b = Broker('test')
+    k = dml(b, 'app-test')
+    with pytest.raises(dml.OperationTimeout, 
                        match=r"Timeout.*"):
                        k.get('bad:pv:name', 'pva', timeout=0.5)
     k.close()
+    b.close()
 
 def test_k2eg_get_bad_pv():
-    k = k2eg('test', 'app-test')
-    with pytest.raises(OperationError):
+    b = Broker('test')
+    k = dml(b, 'app-test')
+    with pytest.raises(dml.OperationError):
                        k.get('bad:pv:name', 'pva')
     k.close()
+    b.close()
 
 def test_k2eg_get_default_protocol():
-    k = k2eg('test', 'app-test')
+    b = Broker('test')
+    k = dml(b, 'app-test')
     get_value = k.get('channel:ramp:ramp')
     assert get_value is not None, "value should not be None"
     k.close()
+    b.close()
 
 def test_k2eg_monitor():
-    k = k2eg('test', 'app-test')
+    b = Broker('test')
+    k = dml(b, 'app-test')
     received_message = None
 
     def monitor_handler(new_value):
@@ -43,9 +52,11 @@ def test_k2eg_monitor():
     assert received_message is not None, "value should not be None"
     k.stop_monitor('channel:ramp:ramp')
     k.close()
+    b.close()
 
 def test_put():
-    k = k2eg('test', 'app-test')
+    b = Broker('test')
+    k = dml(b, 'app-test')
     try:
         res_put = k.put("variable:a", 0)
         assert res_put[0] == 0, "put should succeed"
@@ -64,16 +75,21 @@ def test_put():
         assert res_get['value'] == 4, "value should not be 0"
     finally:
         k.close()
+        b.close()
 
 def test_put_timeout():
-    k = k2eg('test', 'app-test')
-    with pytest.raises(OperationTimeout, 
+    b = Broker('test')
+    k = dml(b, 'app-test')
+    with pytest.raises(dml.OperationTimeout, 
                        match=r"Timeout.*"):
                        k.put("bad:pv:name", 0, timeout=0.5)
     k.close()
+    b.close()
 
 def test_put_wrong_device_timeout():
-    k = k2eg('test', 'app-test')
-    with pytest.raises(OperationError):
+    b = Broker('test')
+    k = dml(b, 'app-test')
+    with pytest.raises(dml.OperationError):
                        k.put("bad:pv:name", 0)
-    k.close()   
+    k.close()
+    b.close() 

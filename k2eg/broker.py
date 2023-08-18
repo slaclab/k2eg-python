@@ -8,11 +8,36 @@ from confluent_kafka import Consumer, TopicPartition, Producer, KafkaError
 from confluent_kafka.admin import AdminClient, NewTopic, KafkaException
 
 class Broker:
+    """
+    Represent the abstraction of the protocol 
+    which the k2eg client talk with the k2eg g
+    ateway
+
+    ...
+
+    Attributes
+    ----------
+
+    Methods
+    -------
+    get_reply_topic()
+        Return the string of the reply topic
+    """
     def __init__(
-        self, environment_id: str, 
-        enviroment_set: str = 'DEFAULT', 
+        self, 
+        environment_id: str, 
         group_name: str =  str(uuid.uuid1())):
-        
+        """
+        Parameters
+        ----------
+        environment_id : str
+            The name of the environment to use, this wil be the danem of the
+            ini file where to load the configuration. (<environment_id>.ini)
+        group_name : str
+            Is the group name to distribuite the data from different same lcient instance
+        """
+        enviroment_set: str = 'DEFAULT'
+        self.__initialized=False
         # Get the current directory of the script
         current_configuration_dir = os.getenv(
             'K2EG_PYTHON_CONFIGURATION_PATH_FOLDER', 
@@ -55,6 +80,7 @@ class Broker:
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
         self.__create_default_topics()
+        self.__initialized=True
 
     def __create_default_topics(self):
         new_topics = [NewTopic(
@@ -193,6 +219,10 @@ class Broker:
             "dest_topic": self.__reply_topic,
         }
         self.send_command(json.dumps(put_value_json_msg))   
+
+    def initialized(self):
+        if not self.self.__initialized:
+            raise 
 
     def close(self):
         self.__producer.flush()

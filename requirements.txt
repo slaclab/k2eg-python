@@ -12,3 +12,4 @@ pytest-runner
 readerwriterlock
 click-loglevel
 click
+click_repl

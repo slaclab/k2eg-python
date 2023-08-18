@@ -7,11 +7,8 @@ import k2eg.cli.get as get
 import k2eg.cli.monitor as monitor
 from k2eg.dml import dml as k2eg
 from click_loglevel import LogLevel
-# import signal
-# import sys
-# import time
-
-#global k2eg instance
+from click_repl import repl
+from prompt_toolkit.history import FileHistory
 
 k2eg_instance: k2eg = None
 
@@ -47,6 +44,14 @@ def process_pipeline(processors, environment, log_level):
         logging.debug("Deinit k2eg")
         k2eg_instance.close()
         logging.debug("Closed k2eg")
+
+
+@cli.command()
+def shell():
+    prompt_kwargs = {
+        'history': FileHistory('/etc/myrepl/myrepl-history'),
+    }
+    repl(click.get_current_context(), prompt_kwargs=prompt_kwargs)
 
 cli.add_command(get.get)
 cli.add_command(monitor.monitor)

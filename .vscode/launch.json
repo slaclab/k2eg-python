@@ -21,6 +21,15 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["-l", "debug", "monitor", "channel:ramp:ramp"]
+        },
+        {
+            "name": "Call Shell",
+            "type": "python",
+            "request": "launch",
+            "module": "k2eg.cli",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-l", "debug", "shell"]
         }
     ]
 }

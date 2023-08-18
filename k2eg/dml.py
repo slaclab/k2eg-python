@@ -10,13 +10,13 @@ from typing import Callable
 from .broker import Broker
 
 class OperationTimeout(Exception):
-    """Exception raised when the tmeout is epired on operation"""
+    """Exception raised when the timeout is expired on operation"""
     def __init__(self, message):            
         # Call the base class constructor with the parameters it needs
         super().__init__(message)
 
 class OperationError(Exception):
-    """Exception raised when the tmeout is epired on operation"""
+    """Exception raised when the timeout is expired on operation"""
     def __init__(self, error, message):            
         # Call the base class constructor with the parameters it needs
         super().__init__(message)
@@ -110,14 +110,13 @@ class dml:
                 return
             self.__monitor_pv_handler[pv_name](converted_msg)
             logging.debug(
-                'read message sent to {} hanlder'
-                    .format(self.__monitor_pv_handler[pv_name])
+                f'read message sent to {self.__monitor_pv_handler[pv_name]} handler'
             )
 
     def __consumer_handler(self):
         """ Consume message form kafka consumer
         after the message has been consumed the header 'k2eg-ser-type' is checked 
-        for find the serializaiton:
+        for find the serialization:
             json, 
             msgpack, 
             msgpack-compact
@@ -131,15 +130,15 @@ class dml:
                 if message.error().code() == KafkaError._PARTITION_EOF:
                     # End of partition event
                     logging.error(
-                        '{} [{}]reached end at offset {}'
-                        .format(message.topic(), message.partition(), message.offset())
+                        f"{message.topic()} [{message.partition()}]reached "+
+                        f"end at offset {message.offset()}"
                     )
                 elif message.error():
                     logging.error(message.error())
             else:
                 # good message
                 if message.topic() == self.__broker.get_reply_topic():
-                    logging.info("received reply with offset {}".format(message.offset))
+                    logging.debug(f"received reply with offset {message.offset()}")
                     reply_id, converted_msg = self.__decode_message(message, True)
                     if reply_id is None or converted_msg is None:
                         continue
@@ -147,9 +146,9 @@ class dml:
                         self.reply_message[reply_id] = converted_msg
                         self.reply_wait_condition.notifyAll()
                 else:
-                    logging.info(
-                        "received monitor message with offset {} from topic {}"
-                        .format(message.offset, message.topic)
+                    logging.debug(
+                        "received monitor message with offset "+
+                        f"{message.offset()} from topic {message.topic()}"
                     )
                     pv_name, converted_msg = self.__decode_message(message, False)
                     if pv_name is None or converted_msg is None:
@@ -167,18 +166,22 @@ class dml:
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
+    def with_for_backends(self):
+        logging.debug("Waiting for join kafka reply topic")
+        self.__broker.wait_for_reply_available()
+
     def get(self, pv_name: str, protocol: str = 'pva', timeout: float = None):
         """ Perform the get operation
             raise OperationTimeout when timeout has expired
         """
         if not self.__check_pv_name(pv_name):
             raise ValueError(
-                "The PV name can only containes letter (upper or lower)"
+                "The PV name can only contains letter (upper or lower)"
                 ", number ad the character ':'"
             )
         
         if protocol.lower() != "pva" and protocol.lower() != "ca":
-            raise RuntimeError("The portocol need to be one of 'pva'  'ca'")
+            raise ValueError("The protocol need to be one of 'pva'  'ca'")
         
         # wait for consumer joined the topic
         self.__broker.wait_for_reply_available()
@@ -191,7 +194,7 @@ class dml:
             with self.reply_wait_condition:
                 # clear the reply message for the requested pv
                 self.reply_message[new_reply_id] = None
-                 # send message to k2eg
+                # send message to k2eg
                 self.__broker.send_get_command(
                     pv_name,
                     protocol.lower(),
@@ -203,7 +206,7 @@ class dml:
                     # and rise exception
                     del(self.reply_message[new_reply_id])
                     raise OperationTimeout(
-                        "Timeout during get orpation for {}".format(pv_name)
+                        f"Timeout during get operation for {pv_name}"
                         )
                 if self.reply_message[new_reply_id] is None:
                     continue
@@ -212,8 +215,8 @@ class dml:
                 message = None
                 result = None
                 error = self.reply_message[new_reply_id]['error']
-                if 'message' in self.reply_message:
-                    message = self.reply_message['message']
+                if 'message' in self.reply_message[new_reply_id]:
+                    message = self.reply_message[new_reply_id]['message']
                 if error == 0:
                     result = self.reply_message[new_reply_id][pv_name]
                 del(self.reply_message[new_reply_id])
@@ -226,21 +229,21 @@ class dml:
         Args:
             pv_name   (str): is the name of the pv
             value     (str): is the new value
-            protocol  (str): the protocl of the pv, the default is pva
+            protocol  (str): the protocol of the pv, the default is pva
             timeout (float): the timeout, in second or fraction
         Raises:
-            ValueError: if some paramter are not valid
+            ValueError: if some parameter are not valid
         
             return the error code and a message in case the error code is not 0
         """
         if not self.__check_pv_name(pv_name):
             raise ValueError(
-                "The PV name can only containes letter (upper or lower)"
+                "The PV name can only contains letter (upper or lower)"
                 ", number ad the character ':'"
             )
 
-        if protocol.lower() != "pva" and protocol.lower() != "ca":
-            raise ValueError("The portocol need to be one of 'pva'  'ca'")
+        if protocol.lower() not in ("pva", "ca"):
+            raise ValueError("The protocol need to be one of 'pva'  'ca'")
         
         # wait for consumer joined the topic        
         error = 0
@@ -267,7 +270,7 @@ class dml:
                     # and rise exception
                     del(self.reply_message[new_reply_id])
                     raise OperationTimeout(
-                        "Timeout during put orpation for {}".format(pv_name)
+                        f"Timeout during put operation for {pv_name}"
                         )
                 if self.reply_message[new_reply_id] is None:
                     continue
@@ -300,13 +303,13 @@ class dml:
                 ", number ad the character ':'"
             )
 
-        if protocol.lower() != "pva" and protocol.lower() != "ca":
+        if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
 
         with self.__lock.gen_wlock():
             if pv_name in self.__monitor_pv_handler:
                 logging.info(
-                    "Monitor already activate for pv {}".format(pv_name))
+                    f"Monitor already activate for pv {pv_name}")
                 return
             self.__monitor_pv_handler[pv_name] = handler
             self.__broker.add_topic(self.__normalize_pv_name(pv_name))
@@ -334,14 +337,14 @@ class dml:
         """
         if not self.__check_pv_name(pv_name):
             raise ValueError(
-                "The PV name can only containes letter (upper or lower)"
+                "The PV name can only contains letter (upper or lower)"
                 ", number ad the character ':'"
             )
 
         with self.__lock.gen_wlock():
             if pv_name not in self.__monitor_pv_handler:
                 logging.info(
-                    "Monitor already stopped for pv {}".format(pv_name))
+                    f"Monitor already stopped for pv {pv_name}")
                 return
             del self.__monitor_pv_handler[pv_name]
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))

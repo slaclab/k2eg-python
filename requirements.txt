@@ -1,5 +1,3 @@
-typer==0.7.0
-colorama==0.4.6
 shellingham==1.5.0
 confluent-kafka==2.1.1
 python_snappy==0.6.1
@@ -12,3 +10,6 @@ twine
 pytest
 pytest-runner
 readerwriterlock
+click-loglevel
+click
+click_repl

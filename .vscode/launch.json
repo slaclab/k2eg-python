@@ -8,19 +8,28 @@
             "name": "Call Get",
             "type": "python",
             "request": "launch",
-            "module": "k2eg",
+            "module": "k2eg.cli",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["get", "channel:ramp:ramp"]
+            "args": ["-l", "debug", "get", "channel:ramp:ramp"]
         },
         {
             "name": "Call Monitor",
             "type": "python",
             "request": "launch",
-            "module": "k2eg",
+            "module": "k2eg.cli",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["monitor", "channel:ramp:ramp"]
+            "args": ["-l", "debug", "monitor", "channel:ramp:ramp"]
+        },
+        {
+            "name": "Call Shell",
+            "type": "python",
+            "request": "launch",
+            "module": "k2eg.cli",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-l", "debug"]
         }
     ]
 }

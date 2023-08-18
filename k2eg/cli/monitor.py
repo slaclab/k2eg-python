@@ -12,7 +12,9 @@ evt = threading.Event()
 @click.argument('pv_name')
 @click.option('--protocol', default='pva', help='The protocol pva,ca')
 @click.option('--timeout', default='10', help='The timeout in seconds')
-@click.option('--filter', default=[], multiple=True, type=str, help='structure element to include')
+@click.option('--filter', 
+              default=[], multiple=True, 
+              type=str, help='structure element to include')
 @click.pass_obj
 def monitor(k2eg: k2eg, pv_name: str, protocol: str, timeout: int, filter):
     """
@@ -39,7 +41,7 @@ def monitor(k2eg: k2eg, pv_name: str, protocol: str, timeout: int, filter):
         evt.wait()
     except OperationError as e:
         click.echo(f"Remote error: {e.error} with message: {e.args[0]}")
-    except OperationTimeout as e:
+    except OperationTimeout:
         print("Client timeout")
         pass
     except ValueError as e:

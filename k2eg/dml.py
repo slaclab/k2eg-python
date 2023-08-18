@@ -130,7 +130,8 @@ class dml:
                 if message.error().code() == KafkaError._PARTITION_EOF:
                     # End of partition event
                     logging.error(
-                        f'{message.topic()} [{message.partition()}]reached end at offset {message.offset()}'
+                        f"{message.topic()} [{message.partition()}]reached "+
+                        f"end at offset {message.offset()}"
                     )
                 elif message.error():
                     logging.error(message.error())
@@ -146,7 +147,8 @@ class dml:
                         self.reply_wait_condition.notifyAll()
                 else:
                     logging.debug(
-                        f"received monitor message with offset {message.offset()} from topic {message.topic()}"
+                        "received monitor message with offset "+
+                        f"{message.offset()} from topic {message.topic()}"
                     )
                     pv_name, converted_msg = self.__decode_message(message, False)
                     if pv_name is None or converted_msg is None:

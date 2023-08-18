@@ -57,7 +57,10 @@ class Broker:
         self.__create_default_topics()
 
     def __create_default_topics(self):
-        new_topics = [NewTopic(self.__reply_topic, num_partitions=1, replication_factor=1)]
+        new_topics = [NewTopic(
+            self.__reply_topic, 
+            num_partitions=1, 
+            replication_factor=1)]
         fs = self.__admin.create_topics(new_topics)
         for topic, f in fs.items():
             try:

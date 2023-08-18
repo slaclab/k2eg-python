@@ -9,7 +9,6 @@ from k2eg.dml import dml as k2eg
 from click_loglevel import LogLevel
 from click_repl import repl
 from click_repl import register_repl
-from prompt_toolkit.history import FileHistory
 
 k2eg_instance: k2eg = None
 initilized: bool = False
@@ -58,19 +57,6 @@ def process_pipeline(processors, environment, log_level):
         logging.debug("Deinit k2eg")
         k2eg_instance.close()
         logging.debug("Closed k2eg")
-
-
-repl_history_path = '/tmp/k2eg-cli'
-
-# @cli.command()
-# def shell():
-#     if not os.path.exists(repl_history_path):
-#         os.makedirs(repl_history_path)
-        
-#     prompt_kwargs = {
-#         'history': FileHistory(os.path.join(repl_history_path,'k2eg-cli-history')),
-#     }
-#     repl(click.get_current_context(), prompt_kwargs=prompt_kwargs)
 
 register_repl(cli)  # Register the REPL command
 cli.add_command(get.get)

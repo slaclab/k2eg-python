@@ -2,7 +2,6 @@ from k2eg.dml import OperationError, dml as k2eg
 from k2eg.dml import OperationTimeout
 import time
 import pytest
-from confluent_kafka.admin import AdminClient, NewTopic
 
 def test_k2eg_get():
     k = k2eg('test', 'app-test')

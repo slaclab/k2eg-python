@@ -8,7 +8,9 @@ import k2eg
 @click.argument('pv_name', required=True)
 @click.option('--protocol', default='pva', help='The protocol pva,ca')
 @click.option('--timeout', default='10', help='The timeout in seconds')
-@click.option('--filter', default=[], multiple=True, type=str, help='structure element to include')
+@click.option('--filter', 
+              default=[], multiple=True, 
+              type=str, help='structure element to include')
 @click.pass_obj
 def get(k2eg: k2eg, pv_name: str, protocol: str, timeout: int, filter):
     """
@@ -22,8 +24,8 @@ def get(k2eg: k2eg, pv_name: str, protocol: str, timeout: int, filter):
             result = {key: result[key] for key in filter}
         click.echo(json.dumps(result, indent=4))
     except OperationError as e:
-        print("Remote error: {} with message: {}".format(e.error,e.args[0]))
-    except OperationTimeout as e:
+        print(f"Remote error: {e.error} with message: {e.args[0]}")
+    except OperationTimeout:
         print("Client timeout")
         pass
     except ValueError as e:

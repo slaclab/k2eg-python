@@ -42,7 +42,7 @@ def cli(ctx, environment, log_level):
         logging.debug("Use environment '{}'".format(environment))
         # allocate k2eg in 
         logging.debug("K2g initilizing")
-        ctx.obj = k2eg_broker_instance = k2eg.dml(environment)
+        ctx.obj = k2eg_dml_instance = k2eg.dml(environment)
         initilized = True
     
     if ctx.invoked_subcommand is None:
@@ -56,9 +56,9 @@ def cli(ctx, environment, log_level):
 @cli.result_callback()
 def process_pipeline(processors, environment, log_level):
     if k2eg_dml_instance is not None and in_shell is False:
-        logging.debug("Deinit broker")
+        logging.debug("Deinit dml")
         k2eg_dml_instance.close()
-        logging.debug("Closed broker")
+        logging.debug("Closed dml")
 
 register_repl(cli)  # Register the REPL command
 cli.add_command(get.get)

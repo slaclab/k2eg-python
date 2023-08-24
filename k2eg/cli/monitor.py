@@ -1,9 +1,6 @@
 import json
-import logging
 import click
-import signal
 from k2eg.dml import OperationTimeout, OperationError
-import k2eg
 import threading
 
 evt = threading.Event()
@@ -21,7 +18,6 @@ def monitor(ctx_obj: dict, pv_url: str, timeout: int, filter):
     """
     pv_name: str = None
     protocol: str = None
-    pv_name_monitored: str = None
     def monitor_handler(pv_name, pv_value):
         nonlocal filter
         if len(filter)>0:

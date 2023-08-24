@@ -1,8 +1,5 @@
-import json
-import logging
 import click
 from k2eg.dml import OperationTimeout, OperationError
-import k2eg
 
 @click.command()
 @click.argument('pv_url', required=True)

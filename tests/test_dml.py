@@ -1,4 +1,3 @@
-from token import EQUAL
 import k2eg
 from k2eg.dml import _filter_pv_uri
 import time
@@ -26,7 +25,8 @@ def test_exception_on_get_without_protocol():
                        match=r".*url.*not.*formed"):
                        k.get('//bad:pv:name', timeout=0.5)
     finally:
-        if k is not None: k.close()
+        if k is not None: 
+              k.close()
 
 def test_exception_on_get_with_bad_pv_name():
     k = k2eg.dml('test', 'app-test')
@@ -35,7 +35,8 @@ def test_exception_on_get_with_bad_pv_name():
                        match=r".*url.*not.*formed"):
                        k.get('pva://', timeout=0.5)
     finally:
-        if k is not None: k.close()
+        if k is not None: 
+              k.close()
 
 def test_exception_on_get_with_bad_protocol():
     k = k2eg.dml('test', 'app-test')
@@ -44,7 +45,8 @@ def test_exception_on_get_with_bad_protocol():
                        match=r".*url.*not.*formed"):
                        k.get('unkonwn://', timeout=0.5)
     finally:
-        if k is not None: k.close()
+        if k is not None:
+            k.close()
 
 def test_k2eg_get():
     k = k2eg.dml('test', 'app-test')
@@ -52,7 +54,8 @@ def test_k2eg_get():
         get_value = k.get('pva://channel:ramp:ramp')
         assert get_value is not None, "value should not be None"
     finally:
-        if k is not None: k.close()
+        if k is not None: 
+              k.close()
 
 def test_k2eg_get_timeout():
     k = k2eg.dml('test', 'app-test')
@@ -61,7 +64,8 @@ def test_k2eg_get_timeout():
                        match=r"Timeout.*"):
                        k.get('pva://bad:pv:name', timeout=0.5)
     finally:
-        if k is not None: k.close()
+        if k is not None: 
+              k.close()
 
 def test_k2eg_get_bad_pv():
     k = k2eg.dml('test', 'app-test')
@@ -69,7 +73,8 @@ def test_k2eg_get_bad_pv():
         with pytest.raises(k2eg.OperationError):
                         k.get('pva://bad:pv:name')
     finally:
-        if k is not None: k.close()
+        if k is not None: 
+              k.close()
 
 def test_k2eg_monitor():
     k = k2eg.dml('test', 'app-test')

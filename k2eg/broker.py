@@ -34,7 +34,8 @@ class Broker:
             The name of the environment to use, this wil be the danem of the
             ini file where to load the configuration. (<environment_id>.ini)
         group_name : str
-            Is the group name to distribuite the data from different same lcient instance
+            Is the group name to distribuite the data from different same 
+            client instance
         """
         enviroment_set: str = 'DEFAULT'
         self.__initialized=False

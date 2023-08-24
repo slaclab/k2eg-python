@@ -108,7 +108,7 @@ class dml:
         with self.__lock.gen_rlock():
             if pv_name not in self.__monitor_pv_handler:
                 return
-            self.__monitor_pv_handler[pv_name](converted_msg)
+            self.__monitor_pv_handler[pv_name](pv_name, converted_msg[pv_name])
             logging.debug(
                 f'read message sent to {self.__monitor_pv_handler[pv_name]} handler'
             )
@@ -156,13 +156,16 @@ class dml:
                     self.__process_message(pv_name, converted_msg)
                 self.__broker.commit_current_fetched_message()
 
-    def __check_pv_name(self, pv_url):
+    def parse_pv_url(self, pv_url):
         protocol, pv_name = _filter_pv_uri(pv_url)
         if protocol is None  or pv_name is None:
             raise ValueError(
                 "The url is not well formed"
             )
         return protocol, pv_name
+
+    def __check_pv_name(self, pv_url):
+        pass
 
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
@@ -175,7 +178,7 @@ class dml:
         """ Perform the get operation
             raise OperationTimeout when timeout has expired
         """
-        protocol, pv_name = self.__check_pv_name(pv_url)
+        protocol, pv_name = self.parse_pv_url(pv_url)
         
         if protocol.lower() != "pva" and protocol.lower() != "ca":
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
@@ -233,7 +236,7 @@ class dml:
         
             return the error code and a message in case the error code is not 0
         """
-        protocol, pv_name = self.__check_pv_name(pv_url)
+        protocol, pv_name = self.parse_pv_url(pv_url)
 
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
@@ -277,7 +280,7 @@ class dml:
                 if error != 0:
                     raise OperationError(error, message)
 
-    def monitor(self, pv_url: str, handler: Callable[[any], None]):  # noqa: E501
+    def monitor(self, pv_url: str, handler: Callable[[str, dict], None]):  # noqa: E501
         """ Add a new monitor for pv if it is not already activated
         Parameters
                 ----------
@@ -290,7 +293,7 @@ class dml:
                 True: the monitor has been activated
                 False: otherwhise
         """
-        protocol, pv_name = self.__check_pv_name(pv_url)
+        protocol, pv_name = self.parse_pv_url(pv_url)
 
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
@@ -324,11 +327,7 @@ class dml:
                 True: the monitor has been activated
                 False: otherwhise
         """
-        if not self.__check_pv_name(pv_name):
-            raise ValueError(
-                "The PV name can only contains letter (upper or lower)"
-                ", number ad the character ':'"
-            )
+        self.__check_pv_name(pv_name)
 
         with self.__lock.gen_wlock():
             if pv_name not in self.__monitor_pv_handler:

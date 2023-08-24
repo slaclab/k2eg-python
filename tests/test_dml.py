@@ -76,7 +76,7 @@ def test_k2eg_monitor():
     try:
         received_message = None
 
-        def monitor_handler(new_value):
+        def monitor_handler(pv_name, new_value):
             nonlocal received_message
             received_message = new_value
 

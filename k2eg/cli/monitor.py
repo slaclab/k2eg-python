@@ -9,29 +9,28 @@ import threading
 evt = threading.Event()
 
 @click.command()
-@click.argument('pv_name')
-@click.option('--protocol', default='pva', help='The protocol pva,ca')
+@click.argument('pv_url')
 @click.option('--timeout', default=10, help='The timeout in seconds')
 @click.option('--filter', 
               default=[], multiple=True, 
               type=str, help='structure element to include')
 @click.pass_obj
-def monitor(ctx_obj: dict, pv_name: str, protocol: str, timeout: int, filter):
+def monitor(ctx_obj: dict, pv_url: str, timeout: int, filter):
     """
     Execute a monitor operation from k2eg
     """
-    def monitor_handler(new_value_dic):
+    pv_name: str = None
+    protocol: str = None
+    pv_name_monitored: str = None
+    def monitor_handler(pv_name, pv_value):
         nonlocal filter
-        nonlocal pv_name
-        if pv_name in new_value_dic:
-            pv_value = new_value_dic[pv_name]
-            if len(filter)>0:
-                pv_value = {key: pv_value[key] for key in filter}
-            click.echo(json.dumps(pv_value, indent=4))
-        else:
-            logging.error(f'Invalid key found on monitor package for {pv_name}')    
+        if len(filter)>0:
+            pv_value = {key: pv_value[key] for key in filter}
+        click.echo(json.dumps(pv_value, indent=4))
+ 
     try:
-        ctx_obj.monitor(pv_name, monitor_handler, protocol)
+        protocol, pv_name = ctx_obj.parse_pv_url(pv_url)
+        ctx_obj.monitor(pv_url, monitor_handler)
         evt.wait()
     except KeyboardInterrupt:
         evt.set()

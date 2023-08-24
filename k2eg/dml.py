@@ -1,13 +1,21 @@
+import re
+import uuid
+import msgpack
 import logging
 import threading
-import uuid
 from readerwriterlock import rwlock
 from confluent_kafka import KafkaError
-import re
-import msgpack
 from typing import Callable
+from k2eg.broker import Broker
 
-from .broker import Broker
+_protocol_regex = r"(pva?|ca)://([-\w.]+(/[-\w./]*)*:.*)"
+
+def _filter_pv_uri(uri: str):
+    match = re.match(_protocol_regex, uri)
+    if match:
+        return match.group(1), match.group(2)
+    else:
+        return None, None
 
 class OperationTimeout(Exception):
     """Exception raised when the timeout is expired on operation"""
@@ -24,11 +32,8 @@ class OperationError(Exception):
 
 class dml:
     """K2EG client"""
-    def __init__(self, environment_id:str, app_name: str = str(uuid.uuid1())):
-        self.__broker = Broker(
-            environment_id = environment_id,
-            group_name = app_name
-            )
+    def __init__(self, environment_id: str, app_name: str = str(uuid.uuid1())):
+        self.__broker = Broker(environment_id)
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()
         
@@ -47,11 +52,6 @@ class dml:
     def __del__(self):
         # Perform cleanup operations when the instance is deleted
         self.close()
-
-    def close(self):
-        self.__consume_data = False
-        self.__thread.join()
-        self.__broker.close()
 
     def __from_json(self, j_msg, is_a_reply: bool):
         print('__from_json')
@@ -108,7 +108,7 @@ class dml:
         with self.__lock.gen_rlock():
             if pv_name not in self.__monitor_pv_handler:
                 return
-            self.__monitor_pv_handler[pv_name](converted_msg)
+            self.__monitor_pv_handler[pv_name](pv_name, converted_msg[pv_name])
             logging.debug(
                 f'read message sent to {self.__monitor_pv_handler[pv_name]} handler'
             )
@@ -156,29 +156,29 @@ class dml:
                     self.__process_message(pv_name, converted_msg)
                 self.__broker.commit_current_fetched_message()
 
-    def __check_pv_name(self, pv_name):
-        pattern = r'^[a-zA-Z0-9:]+$'
-        if re.match(pattern, pv_name):
-            return True
-        else:
-            return False
+    def parse_pv_url(self, pv_url):
+        protocol, pv_name = _filter_pv_uri(pv_url)
+        if protocol is None  or pv_name is None:
+            raise ValueError(
+                "The url is not well formed"
+            )
+        return protocol, pv_name
+
+    def __check_pv_name(self, pv_url):
+        pass
 
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
-    def with_for_backends(self):
+    def wait_for_backends(self):
         logging.debug("Waiting for join kafka reply topic")
         self.__broker.wait_for_reply_available()
 
-    def get(self, pv_name: str, protocol: str = 'pva', timeout: float = None):
+    def get(self, pv_url: str, timeout: float = None):
         """ Perform the get operation
             raise OperationTimeout when timeout has expired
         """
-        if not self.__check_pv_name(pv_name):
-            raise ValueError(
-                "The PV name can only contains letter (upper or lower)"
-                ", number ad the character ':'"
-            )
+        protocol, pv_name = self.parse_pv_url(pv_url)
         
         if protocol.lower() != "pva" and protocol.lower() != "ca":
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
@@ -224,7 +224,7 @@ class dml:
                     raise OperationError(error, message)
         return result
                 
-    def put(self, pv_name: str, value: any, protocol: str = 'pva', timeout: float = None):  # noqa: E501
+    def put(self, pv_url: str, value: any, timeout: float = None):
         """ Set the value for a single pv
         Args:
             pv_name   (str): is the name of the pv
@@ -236,11 +236,7 @@ class dml:
         
             return the error code and a message in case the error code is not 0
         """
-        if not self.__check_pv_name(pv_name):
-            raise ValueError(
-                "The PV name can only contains letter (upper or lower)"
-                ", number ad the character ':'"
-            )
+        protocol, pv_name = self.parse_pv_url(pv_url)
 
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
@@ -284,7 +280,7 @@ class dml:
                 if error != 0:
                     raise OperationError(error, message)
 
-    def monitor(self, pv_name: str, handler: Callable[[any], None], protocol: str = 'pva'):  # noqa: E501
+    def monitor(self, pv_url: str, handler: Callable[[str, dict], None]):  # noqa: E501
         """ Add a new monitor for pv if it is not already activated
         Parameters
                 ----------
@@ -297,11 +293,7 @@ class dml:
                 True: the monitor has been activated
                 False: otherwhise
         """
-        if not self.__check_pv_name(pv_name):
-            raise ValueError(
-                "The PV name can only containes letter (upper or lower)"
-                ", number ad the character ':'"
-            )
+        protocol, pv_name = self.parse_pv_url(pv_url)
 
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
@@ -335,11 +327,7 @@ class dml:
                 True: the monitor has been activated
                 False: otherwhise
         """
-        if not self.__check_pv_name(pv_name):
-            raise ValueError(
-                "The PV name can only contains letter (upper or lower)"
-                ", number ad the character ':'"
-            )
+        self.__check_pv_name(pv_name)
 
         with self.__lock.gen_wlock():
             if pv_name not in self.__monitor_pv_handler:
@@ -355,3 +343,8 @@ class dml:
             pv_name,
             self.__normalize_pv_name(pv_name)
         )
+
+    def close(self):
+        self.__consume_data = False
+        self.__thread.join()
+        self.__broker.close()

@@ -4,13 +4,14 @@ import click
 import logging
 import k2eg.__version__ as __version__
 import k2eg.cli.get as get
+import k2eg.cli.put as put
 import k2eg.cli.monitor as monitor
-from k2eg.dml import dml as k2eg
+import k2eg
 from click_loglevel import LogLevel
 from click_repl import repl
 from click_repl import register_repl
 
-k2eg_instance: k2eg = None
+k2eg_dml_instance: k2eg.dml = None
 initilized: bool = False
 in_shell: bool = False
 
@@ -24,10 +25,11 @@ in_shell: bool = False
     default=logging.INFO,
 )
 def cli(ctx, environment, log_level):
-    global k2eg_instance
+    global k2eg_dml_instance
     global initilized
     global in_shell
     if not initilized:
+        ctx.obj = {}
         logging.basicConfig(
             format="[%(levelname)-8s] %(message)s",
             level=log_level,
@@ -40,7 +42,7 @@ def cli(ctx, environment, log_level):
         logging.debug("Use environment '{}'".format(environment))
         # allocate k2eg in 
         logging.debug("K2g initilizing")
-        ctx.obj = k2eg_instance = k2eg(environment)
+        ctx.obj = k2eg_dml_instance = k2eg.dml(environment)
         initilized = True
     
     if ctx.invoked_subcommand is None:
@@ -53,13 +55,14 @@ def cli(ctx, environment, log_level):
 
 @cli.result_callback()
 def process_pipeline(processors, environment, log_level):
-    if k2eg_instance is not None and in_shell is False:
-        logging.debug("Deinit k2eg")
-        k2eg_instance.close()
-        logging.debug("Closed k2eg")
+    if k2eg_dml_instance is not None and in_shell is False:
+        logging.debug("Deinit dml")
+        k2eg_dml_instance.close()
+        logging.debug("Closed dml")
 
 register_repl(cli)  # Register the REPL command
 cli.add_command(get.get)
+cli.add_command(put.put)
 cli.add_command(monitor.monitor)
 if __name__ == "__main__":
     cli()

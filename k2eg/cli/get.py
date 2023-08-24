@@ -19,7 +19,7 @@ def get(ctx_obj: dict, pv_name: str, protocol: str, timeout: int, filter):
     #k2eg.with_for_backends()
     logging.debug("GET on {} with protocol {}".format( pv_name, protocol))
     try:
-        result = ctx_obj['dml'].get(pv_name, protocol)
+        result = ctx_obj.get(pv_name, protocol)
         if len(filter)>0:
             result = {key: result[key] for key in filter}
         click.echo(json.dumps(result, indent=4))

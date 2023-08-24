@@ -36,7 +36,7 @@ def monitor(ctx_obj: dict, pv_name: str, protocol: str, timeout: int, filter):
     signal.signal(signal.SIGINT, signal_handler)
     
     try:
-        ctx_obj['dml'].monitor(pv_name, monitor_handler, protocol)
+        ctx_obj.monitor(pv_name, monitor_handler, protocol)
         evt.wait()
     except KeyboardInterrupt:
         evt.set()
@@ -49,7 +49,7 @@ def monitor(ctx_obj: dict, pv_name: str, protocol: str, timeout: int, filter):
         print(f"Bad value {e.arg[0]}")
         pass
     finally:
-        ctx_obj['dml'].stop_monitor(pv_name)
+        ctx_obj.stop_monitor(pv_name)
 
 def signal_handler(sig, frame):
     evt.set()

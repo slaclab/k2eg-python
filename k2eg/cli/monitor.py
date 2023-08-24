@@ -31,10 +31,7 @@ def monitor(ctx_obj: dict, pv_name: str, protocol: str, timeout: int, filter):
                 pv_value = {key: pv_value[key] for key in filter}
             click.echo(json.dumps(pv_value, indent=4))
         else:
-            logging.error(f'Invalid key found on monitor package for {pv_name}')
-
-    signal.signal(signal.SIGINT, signal_handler)
-    
+            logging.error(f'Invalid key found on monitor package for {pv_name}')    
     try:
         ctx_obj.monitor(pv_name, monitor_handler, protocol)
         evt.wait()
@@ -50,6 +47,3 @@ def monitor(ctx_obj: dict, pv_name: str, protocol: str, timeout: int, filter):
         pass
     finally:
         ctx_obj.stop_monitor(pv_name)
-
-def signal_handler(sig, frame):
-    evt.set()

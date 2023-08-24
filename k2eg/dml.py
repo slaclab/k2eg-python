@@ -216,7 +216,7 @@ class dml:
                     raise OperationError(error, message)
         return result
                 
-    def put(self, pv_name: str, value: any, protocol: str = 'pva', timeout: float = None):  # noqa: E501
+    def put(self, pv_name: str, value: any, protocol: str = 'pva', timeout: float = None):
         """ Set the value for a single pv
         Args:
             pv_name   (str): is the name of the pv

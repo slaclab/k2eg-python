@@ -4,6 +4,7 @@ import click
 import logging
 import k2eg.__version__ as __version__
 import k2eg.cli.get as get
+import k2eg.cli.put as put
 import k2eg.cli.monitor as monitor
 import k2eg
 from click_loglevel import LogLevel
@@ -61,6 +62,7 @@ def process_pipeline(processors, environment, log_level):
 
 register_repl(cli)  # Register the REPL command
 cli.add_command(get.get)
+cli.add_command(put.put)
 cli.add_command(monitor.monitor)
 if __name__ == "__main__":
     cli()

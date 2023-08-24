@@ -11,7 +11,7 @@ evt = threading.Event()
 @click.command()
 @click.argument('pv_name')
 @click.option('--protocol', default='pva', help='The protocol pva,ca')
-@click.option('--timeout', default='10', help='The timeout in seconds')
+@click.option('--timeout', default=10, help='The timeout in seconds')
 @click.option('--filter', 
               default=[], multiple=True, 
               type=str, help='structure element to include')
@@ -20,8 +20,6 @@ def monitor(ctx_obj: dict, pv_name: str, protocol: str, timeout: int, filter):
     """
     Execute a monitor operation from k2eg
     """
-    logging.debug("MONITOR on {pv_name} with protocol {protocol}")
-
     def monitor_handler(new_value_dic):
         nonlocal filter
         nonlocal pv_name

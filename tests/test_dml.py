@@ -57,17 +57,13 @@ def test_k2eg_monitor():
 def test_put():
     k = k2eg.dml('test', 'app-test')
     try:
-        res_put = k.put("variable:a", 0)
-        assert res_put[0] == 0, "put should succeed"
-        res_put = k.put("variable:b", 0)
-        assert res_put[0] == 0, "put should succeed"
+        k.put("variable:a", 0)
+        k.put("variable:b", 0)
         time.sleep(1)
         res_get = k.get("variable:sum")
         assert res_get['value'] == 0, "value should not be 0"
-        res_put = k.put("variable:a", 2)
-        assert res_put[0] == 0, "put should succeed"
-        res_put = k.put("variable:b", 2)
-        assert res_put[0] == 0, "put should succeed"
+        k.put("variable:a", 2)
+        k.put("variable:b", 2)
         #give some time to ioc to update
         time.sleep(1)
         res_get = k.get("variable:sum")

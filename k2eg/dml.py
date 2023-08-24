@@ -7,7 +7,7 @@ import re
 import msgpack
 from typing import Callable
 
-from .broker import Broker
+from k2eg.broker import Broker
 
 class OperationTimeout(Exception):
     """Exception raised when the timeout is expired on operation"""
@@ -24,8 +24,8 @@ class OperationError(Exception):
 
 class dml:
     """K2EG client"""
-    def __init__(self, broker: Broker, app_name: str = str(uuid.uuid1())):
-        self.__broker = broker
+    def __init__(self, environment_id: str, app_name: str = str(uuid.uuid1())):
+        self.__broker = Broker(environment_id)
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()
         
@@ -351,3 +351,4 @@ class dml:
     def close(self):
         self.__consume_data = False
         self.__thread.join()
+        self.__broker.close()

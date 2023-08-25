@@ -95,6 +95,33 @@ def test_k2eg_monitor():
             k.stop_monitor('channel:ramp:ramp')
             k.close()
 
+def test_k2eg_monitor_stop_restart():
+    k = k2eg.dml('test', 'app-test')
+    try:
+        received_message = None
+
+        def monitor_handler(pv_name, new_value):
+            nonlocal received_message
+            received_message = new_value
+
+        k.monitor('pva://channel:ramp:ramp', monitor_handler)
+        while received_message is None:
+            time.sleep(2)
+        
+        assert received_message is not None, "value should not be None"
+        k.stop_monitor('channel:ramp:ramp')
+
+        received_message = None
+        k.monitor('pva://channel:ramp:ramp', monitor_handler)
+        while received_message is None:
+            time.sleep(2)
+        
+        assert received_message is not None, "value should not be None"
+    finally:
+        if k is not None: 
+            k.stop_monitor('channel:ramp:ramp')
+            k.close()
+
 def test_put():
     k = k2eg.dml('test', 'app-test')
     try:

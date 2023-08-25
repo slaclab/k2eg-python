@@ -33,7 +33,8 @@ class OperationError(Exception):
 class dml:
     """K2EG client"""
     def __init__(self, environment_id: str, app_name: str = str(uuid.uuid1())):
-        self.__broker = Broker(environment_id)
+        self.__broker = Broker(environment_id, app_name)
+        self.__broker.wait_for_reply_available()
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()
         

@@ -50,6 +50,8 @@ services:
     image: bitnami/zookeeper:3.8.1
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
+    volumes:
+      - zookeeper_data:/bitnami/zookeeper
 
   kafka:
     image: bitnami/kafka:3.4.0
@@ -62,3 +64,9 @@ services:
       - KAFKA_CFG_LISTENERS=CLIENT://:9092,EXTERNAL://:9093
       - KAFKA_CFG_ADVERTISED_LISTENERS=CLIENT://kafka:9092,EXTERNAL://localhost:9093
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=CLIENT
+    volumes:
+      - kafka-data:/bitnami/kafka
+
+volumes:
+  kafka-data:
+  zookeeper_data:

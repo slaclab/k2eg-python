@@ -3,7 +3,7 @@ import click
 from k2eg.dml import OperationTimeout, OperationError
 import threading
 
-evt = threading.Event()
+
 
 @click.command()
 @click.argument('pv_url')
@@ -16,6 +16,7 @@ def monitor(ctx_obj: dict, pv_url: str, timeout: int, filter):
     """
     Execute a monitor operation from k2eg
     """
+    evt = threading.Event()
     pv_name: str = None
     protocol: str = None
     def monitor_handler(pv_name, pv_value):

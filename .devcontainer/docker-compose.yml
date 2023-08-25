@@ -54,8 +54,6 @@ services:
   kafka:
     image: bitnami/kafka:3.4.0
     environment:
-      - KAFKA_BROKER_ID=1
-      
       - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
       - ALLOW_PLAINTEXT_LISTENER=yes
       - KAFKA_ENABLE_KRAFT=no

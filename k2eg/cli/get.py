@@ -24,5 +24,5 @@ def get(ctx_obj: dict, pv_url: str, timeout: int, filter):
         print("Client timeout")
         pass
     except ValueError as e:
-        print("Bad value {}".format(e.arg[0]))
+        print("Bad value {}".format(e))
         pass

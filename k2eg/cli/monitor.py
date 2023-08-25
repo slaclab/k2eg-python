@@ -36,7 +36,7 @@ def monitor(ctx_obj: dict, pv_url: str, timeout: int, filter):
         print("Client timeout")
         pass
     except ValueError as e:
-        print(f"Bad value {e.arg[0]}")
+        print(f"Bad value {e}")
         pass
     finally:
         ctx_obj.stop_monitor(pv_name)

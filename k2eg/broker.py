@@ -80,12 +80,12 @@ class Broker:
         self.__reply_partition_assigned = threading.Event()
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
-        self.__create_default_topics()
+        self.__create_topics(self.__reply_topic)
         self.__initialized=True
 
-    def __create_default_topics(self):
+    def __create_topics(self, topic_name: str):
         new_topics = [NewTopic(
-            self.__reply_topic, 
+            topic_name, 
             num_partitions=1, 
             replication_factor=1)]
         fs = self.__admin.create_topics(new_topics)
@@ -189,6 +189,10 @@ class Broker:
         self.send_command(json.dumps(get_json_msg))
 
     def send_start_monitor_command(self, pv_name, protocol, pv_reply_topic, ):
+        # ensure topic exists
+        self.__create_topics(pv_reply_topic)
+
+        # send command
         monitor_json_msg = {
             "command": "monitor",
             "serialization": "msgpack",

@@ -115,7 +115,7 @@ class Broker:
         #                      "get answer from k2eg is mandatory")
         
     def get_reply_topic(self):
-        return self.__reply_topic;
+        return self.__reply_topic
 
     def wait_for_reply_available(self):
         """ Wait untile the consumer has joined the reply topic

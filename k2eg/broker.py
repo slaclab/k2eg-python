@@ -26,7 +26,8 @@ class Broker:
     def __init__(
         self, 
         environment_id: str, 
-        group_name: str =  str(uuid.uuid1())):
+        group_name: str =  str(uuid.uuid1()),
+        app_name:str =  str(uuid.uuid1())):
         """
         Parameters
         ----------
@@ -55,7 +56,7 @@ class Broker:
             f'environment/{environment_id}.ini')
             )
 
-        self.__check_config()
+        self.__check_config(app_name)
 
         config_consumer = {
             'bootstrap.servers': self.__config.get(
@@ -76,7 +77,7 @@ class Broker:
         self.__admin = AdminClient({'bootstrap.servers': self.__config.get(
                 self.__enviroment_set, 'kafka_broker_url'
                 )})
-        self.__reply_topic = self.__config.get(self.__enviroment_set, 'reply_topic')
+        self.__reply_topic = app_name + '_reply'
         self.__reply_partition_assigned = threading.Event()
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
@@ -103,18 +104,18 @@ class Broker:
         logging.debug(f"Joined partition {partitions}")
         self.__reply_partition_assigned.set()
 
-    def __check_config(self):
+    def __check_config(self, app_name):
         if not self.__config.has_option(self.__enviroment_set, 'kafka_broker_url'):
             raise ValueError('[kafka_broker_url] Kafka broker url is mandatory')
         if not self.__config.has_option(self.__enviroment_set, 'k2eg_cmd_topic'):
             raise ValueError("[k2eg_cmd_topic] The topic "
                              "for send command to k2eg is mandatory")
-        if not self.__config.has_option(self.__enviroment_set, 'reply_topic'):
-            raise ValueError("[reply_topic] The reply topic for "
-                             "get answer from k2eg is mandatory")
+        # if not self.__config.has_option(self.__enviroment_set, 'reply_topic'):
+        #     raise ValueError("[reply_topic] The reply topic for "
+        #                      "get answer from k2eg is mandatory")
         
     def get_reply_topic(self):
-        return self.__config.get(self.__enviroment_set, 'reply_topic')
+        return self.__reply_topic
 
     def wait_for_reply_available(self):
         """ Wait untile the consumer has joined the reply topic

@@ -77,7 +77,7 @@ class Broker:
         self.__admin = AdminClient({'bootstrap.servers': self.__config.get(
                 self.__enviroment_set, 'kafka_broker_url'
                 )})
-        self.__reply_topic = app_name + '_reply'
+        self.__reply_topic = app_name + '-reply'
         self.__reply_partition_assigned = threading.Event()
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)

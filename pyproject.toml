@@ -23,7 +23,10 @@ dependencies = [
     "readerwriterlock",
     "python-dotenv",
     "click",
-    "click-loglevel"
+    "click-loglevel",
+    "wheel",
+    "setuptools",
+    "click_repl",
 ]
 
 [project.scripts]

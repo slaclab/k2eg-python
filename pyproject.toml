@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 
 [project]
 name = "k2eg"
-version = "0.0.0"
+version = "0.1.15"
 description = "A k2eg library"
 readme = "Permit to interact with k2eg throught kakfka"
 authors = [{name = "Claudio Bisegni", email = "bisegni@slac.stanford.edu"}]
@@ -23,7 +23,10 @@ dependencies = [
     "readerwriterlock",
     "python-dotenv",
     "click",
-    "click-loglevel"
+    "click-loglevel",
+    "wheel",
+    "setuptools",
+    "click_repl",
 ]
 
 [project.scripts]

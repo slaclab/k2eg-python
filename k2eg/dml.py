@@ -50,7 +50,6 @@ class dml:
         self.reply_wait_condition = threading.Condition()
         self.reply_ready_event = threading.Event()
         self.reply_message = {}
-        self.__broker.wait_for_reply_available()
 
 
     def __del__(self):

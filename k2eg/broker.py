@@ -78,10 +78,10 @@ class Broker:
                 self.__enviroment_set, 'kafka_broker_url'
                 )})
         self.__reply_topic = app_name + '-reply'
+        self.__create_topics(self.__reply_topic)
         self.__reply_partition_assigned = threading.Event()
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
-        self.__create_topics(self.__reply_topic)
         self.__initialized=True
 
     def __create_topics(self, topic_name: str):

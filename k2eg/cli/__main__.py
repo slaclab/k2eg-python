@@ -42,7 +42,7 @@ def cli(ctx, environment, log_level):
         logging.debug("Use environment '{}'".format(environment))
         # allocate k2eg in 
         logging.debug("K2g initilizing")
-        ctx.obj = k2eg_dml_instance = k2eg.dml(environment)
+        ctx.obj = k2eg_dml_instance = k2eg.dml(environment, 'demo-cli')
         initilized = True
     
     if ctx.invoked_subcommand is None:

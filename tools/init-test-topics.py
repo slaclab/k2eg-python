@@ -1,7 +1,7 @@
 from time import sleep
 from confluent_kafka import KafkaError
 from confluent_kafka.admin import AdminClient, NewTopic, KafkaException
-import sys; 
+import sys
 
 
 def create_topics(admin, topics):

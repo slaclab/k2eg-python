@@ -1,4 +1,3 @@
-from email import message
 import json
 import os
 import uuid
@@ -6,7 +5,7 @@ import logging
 import threading
 import configparser
 from confluent_kafka import Consumer, TopicPartition, Producer, KafkaError
-from confluent_kafka.admin import AdminClient, NewTopic, KafkaException
+from confluent_kafka.admin import AdminClient
 
 class TopicUnknown(Exception):
     """Exception raised when the timeout is expired on operation"""
@@ -130,7 +129,7 @@ class Broker:
         """ Wait untile the consumer has joined the reply topic
         """
         self.__reply_partition_assigned.wait()
-        if self.__reply_topic_joined == False:
+        if self.__reply_topic_joined is False:
                 raise TopicUnknown(f"{self.__reply_partition} unknown")
 
     def reset_reply_topic_to_ts(self, timestamp):

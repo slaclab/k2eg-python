@@ -349,5 +349,5 @@ class dml:
 
     def close(self):
         self.__consume_data = False
-        self.__thread.join()
         self.__broker.close()
+        self.__thread.join()

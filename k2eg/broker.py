@@ -211,7 +211,7 @@ class Broker:
 
     def send_start_monitor_command(self, pv_name, protocol, pv_reply_topic, ):
         # ensure topic exists
-        self.__create_topics(pv_reply_topic)
+        # self.__create_topics(pv_reply_topic)
 
         # send command
         monitor_json_msg = {

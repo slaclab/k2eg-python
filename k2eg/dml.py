@@ -136,7 +136,9 @@ class dml:
                         f"{message.topic()} [{message.partition()}]reached "+
                         f"end at offset {message.offset()}"
                     )
-                elif message.error():
+                elif message.error().code() == KafkaError._UNKNOWN_PARTITION:
+                    logging.error(message.error())
+                else:
                     logging.error(message.error())
             else:
                 # good message

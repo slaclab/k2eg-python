@@ -5,7 +5,13 @@ import logging
 import threading
 import configparser
 from confluent_kafka import Consumer, TopicPartition, Producer, KafkaError
-from confluent_kafka.admin import AdminClient, NewTopic, KafkaException
+from confluent_kafka.admin import AdminClient
+
+class TopicUnknown(Exception):
+    """Exception raised when the timeout is expired on operation"""
+    def __init__(self, message):            
+        # Call the base class constructor with the parameters it needs
+        super().__init__(message)
 
 class Broker:
     """
@@ -63,6 +69,7 @@ class Broker:
                 self.__enviroment_set, 'kafka_broker_url'
                 ), 
             'group.id': group_name,
+            'client.id': group_name+'_'+ str(uuid.uuid1())[:8],
             'auto.offset.reset': 'latest',
             #'debug': 'consumer,cgrp,topic,fetch',
         }
@@ -78,30 +85,34 @@ class Broker:
                 self.__enviroment_set, 'kafka_broker_url'
                 )})
         self.__reply_topic = app_name + '-reply'
-        self.__create_topics(self.__reply_topic)
+        #self.__create_topics(self.__reply_topic)
         self.__reply_partition_assigned = threading.Event()
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
         self.__initialized=True
+        self.__reply_topic_joined = False
 
-    def __create_topics(self, topic_name: str):
-        new_topics = [NewTopic(
-            topic_name, 
-            num_partitions=1, 
-            replication_factor=1)]
-        fs = self.__admin.create_topics(new_topics)
-        for topic, f in fs.items():
-            try:
-                f.result()  # The result itself is None
-                logging.debug(f"Topic {topic} created")
-            except KafkaException as e:
-                if e.args[0].code() == KafkaError.TOPIC_ALREADY_EXISTS:
-                    logging.debug(f"Topic {topic} already exists")
-                else:
-                    logging.FATAL(f"Failed to create topic {topic}: {e}")
+    # def __create_topics(self, topic_name: str):
+    #     new_topics = [NewTopic(
+    #         topic_name, 
+    #         num_partitions=1, 
+    #         replication_factor=1)]
+    #     fs = self.__admin.create_topics(new_topics)
+    #     for topic, f in fs.items():
+    #         try:
+    #             f.result()  # The result itself is None
+    #             logging.debug(f"Topic {topic} created")
+    #         except KafkaException as e:
+    #             if e.args[0].code() == KafkaError.TOPIC_ALREADY_EXISTS:
+    #                 logging.debug(f"Topic {topic} already exists")
+    #             else:
+    #                 logging.FATAL(f"Failed to create topic {topic}: {e}")
 
     def __on_assign(self, consumer, partitions):
         logging.debug(f"Joined partition {partitions}")
+        for t in partitions:
+            if t.topic == self.__reply_topic:
+                self.__reply_topic_joined = True
         self.__reply_partition_assigned.set()
 
     def __check_config(self, app_name):
@@ -110,10 +121,7 @@ class Broker:
         if not self.__config.has_option(self.__enviroment_set, 'k2eg_cmd_topic'):
             raise ValueError("[k2eg_cmd_topic] The topic "
                              "for send command to k2eg is mandatory")
-        # if not self.__config.has_option(self.__enviroment_set, 'reply_topic'):
-        #     raise ValueError("[reply_topic] The reply topic for "
-        #                      "get answer from k2eg is mandatory")
-        
+
     def get_reply_topic(self):
         return self.__reply_topic
 
@@ -121,6 +129,8 @@ class Broker:
         """ Wait untile the consumer has joined the reply topic
         """
         self.__reply_partition_assigned.wait()
+        if self.__reply_topic_joined is False:
+                raise TopicUnknown(f"{self.__reply_partition} unknown")
 
     def reset_reply_topic_to_ts(self, timestamp):
         self.reset_topic_offset_in_time(self.__reply_topic, timestamp)
@@ -144,7 +154,16 @@ class Broker:
                 self.__consumer.seek(tp)
     
     def get_next_message(self, timeout = 0.1):
-        return self.__consumer.poll(timeout)
+        message = self.__consumer.poll(timeout)
+        if message is None:
+            return None    
+        if message.error():
+            if message.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
+                if self.__reply_topic == message.topic():
+                    self.__reply_topic_joined = False
+                    self.__reply_partition_assigned.set()
+                logging.error(message.error())
+        return message
     
     def commit_current_fetched_message(self):
         self.__consumer.commit()
@@ -191,7 +210,7 @@ class Broker:
 
     def send_start_monitor_command(self, pv_name, protocol, pv_reply_topic, ):
         # ensure topic exists
-        self.__create_topics(pv_reply_topic)
+        # self.__create_topics(pv_reply_topic)
 
         # send command
         monitor_json_msg = {

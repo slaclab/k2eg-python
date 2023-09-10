@@ -143,7 +143,7 @@ class Broker:
         # Create TopicPartition objects for each partition, with the specific timestamp
         topic_partitions = [
             TopicPartition(topic, p, int(timestamp * 1000)) for p in partitions
-            ]
+        ]
 
         # Get the offsets for the specific timestamps
         offsets_for_times = self.__consumer.offsets_for_times(topic_partitions)
@@ -159,9 +159,9 @@ class Broker:
             return None    
         if message.error():
             if message.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
-                if self.__reply_topic == message.topic():
-                    self.__reply_topic_joined = False
-                    self.__reply_partition_assigned.set()
+                # if self.__reply_topic == message.topic():
+                #     self.__reply_topic_joined = False
+                #     self.__reply_partition_assigned.set()
                 logging.error(message.error())
         return message
     

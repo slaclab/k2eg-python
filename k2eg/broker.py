@@ -203,12 +203,12 @@ class Broker:
             "serialization": "msgpack",
             "protocol": protocol.lower(),
             "pv_name": pv_name,
-            "dest_topic": self.__reply_topic,
+            "reply_topic": self.__reply_topic,
             "reply_id": reply_id
         }
         self.send_command(json.dumps(get_json_msg))
 
-    def send_start_monitor_command(self, pv_name, protocol, pv_reply_topic, ):
+    def send_start_monitor_command(self, pv_name, protocol, pv_reply_topic, reply_id):
         # ensure topic exists
         # self.__create_topics(pv_reply_topic)
 
@@ -218,18 +218,22 @@ class Broker:
             "serialization": "msgpack",
             "protocol": protocol.lower(),
             "pv_name": pv_name,
-            "dest_topic": pv_reply_topic,
-            "activate": True
+            "reply_topic": self.__reply_topic,
+            "reply_id": reply_id,
+            "activate": True,
+            "monitor-destination-topic": pv_reply_topic
         }
         self.send_command(json.dumps(monitor_json_msg))    
 
-    def send_stop_monitor_command(self, pv_name, pv_reply_topic):
+    def send_stop_monitor_command(self, pv_name, pv_reply_topic, reply_id):
         monitor_json_msg = {
             "command": "monitor",
             "serialization": "msgpack",
             "pv_name": pv_name,
-            "dest_topic": pv_reply_topic,
-            "activate": False
+            "reply_topic": self.__reply_topic,
+            "reply_id": reply_id,
+            "activate": False,
+            "monitor-destination-topic": pv_reply_topic
         }
         self.send_command(json.dumps(monitor_json_msg))
     
@@ -239,9 +243,9 @@ class Broker:
             "protocol": protocol,
             "pv_name": pv_name,
             "value": str(value),
+            "reply_topic": self.__reply_topic,
             "reply_id": reply_id,
-            "serialization": "msgpack",
-            "dest_topic": self.__reply_topic,
+            "serialization": "msgpack"
         }
         self.send_command(json.dumps(put_value_json_msg))   
 

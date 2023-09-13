@@ -56,17 +56,17 @@ class dml:
         # Perform cleanup operations when the instance is deleted
         self.close()
 
-    def __from_json(self, j_msg, is_a_reply: bool):
+    def __from_json(self, j_msg):
         print('__from_json')
 
-    def __from_msgpack(self, m_msg, is_a_reply: bool):
+    def __from_msgpack(self, m_msg):
         msg_id = None
         converted_msg = None
         decodec_msg = msgpack.loads(m_msg)
         if not isinstance(decodec_msg, dict):
             return msg_id, converted_msg
         
-        if is_a_reply:
+        if 'reply_id' in decodec_msg:
             msg_id = decodec_msg['reply_id']
             converted_msg = decodec_msg
         else:
@@ -74,10 +74,10 @@ class dml:
             converted_msg = decodec_msg
         return msg_id, converted_msg
 
-    def __from_msgpack_compack(self, mc_msg, is_a_reply: bool):
+    def __from_msgpack_compack(self, mc_msg):
         print('__from_msgpack_compack')
 
-    def __decode_message(self, msg, is_reply_msg):
+    def __decode_message(self, msg):
         """ Decode single message
         """
         msg_id = None
@@ -92,29 +92,19 @@ class dml:
                 st = value.decode('utf-8').lower()
                 if st == "json":
                     msg_id, converted_msg = self.__from_json(
-                        msg.value(), is_reply_msg
+                        msg.value()
                         )
                 elif st == "msgpack":
                     msg_id, converted_msg = self.__from_msgpack(
-                        msg.value(), is_reply_msg
+                        msg.value()
                         )
                 elif st == "msgpack-compact":
                     msg_id, converted_msg = self.__from_msgpack_compack(
-                        msg.value(), is_reply_msg
+                        msg.value()
                         )
                 break   
         return msg_id, converted_msg
 
-    def __process_message(self, pv_name, converted_msg):
-        """ Process single message
-        """
-        with self.__lock.gen_rlock():
-            if pv_name not in self.__monitor_pv_handler:
-                return
-            self.__monitor_pv_handler[pv_name](pv_name, converted_msg[pv_name])
-            logging.debug(
-                f'read message sent to {self.__monitor_pv_handler[pv_name]} handler'
-            )
 
     def __consumer_handler(self):
         """ Consume message form kafka consumer
@@ -141,24 +131,22 @@ class dml:
                 else:
                     logging.error(message.error())
             else:
-                # good message
-                if message.topic() == self.__broker.get_reply_topic():
-                    logging.debug(f"received reply with offset {message.offset()}")
-                    reply_id, converted_msg = self.__decode_message(message, True)
-                    if reply_id is None or converted_msg is None:
-                        continue
-                    with self.reply_wait_condition:
-                        self.reply_message[reply_id] = converted_msg
+                was_a_reply = False
+                #msg_id could be a reply id or pv name
+                msg_id, decoded_message = self.__decode_message(message)
+                logging.debug(f"received with offset [{msg_id}|{message.offset()}]")
+                if msg_id is None or decoded_message is None:
+                    continue
+                with self.reply_wait_condition:
+                    was_a_reply = msg_id in self.reply_message
+                    if was_a_reply is True:
+                        self.reply_message[msg_id] = decoded_message
                         self.reply_wait_condition.notifyAll()
-                else:
-                    logging.debug(
-                        "received monitor message with offset "+
-                        f"{message.offset()} from topic {message.topic()}"
-                    )
-                    pv_name, converted_msg = self.__decode_message(message, False)
-                    if pv_name is None or converted_msg is None:
-                        continue
-                    self.__process_message(pv_name, converted_msg)
+                    elif msg_id in self.__monitor_pv_handler:
+                        self.__monitor_pv_handler[msg_id](msg_id, decoded_message[msg_id])
+                        logging.debug(
+                            f'read message sent to {self.__monitor_pv_handler[msg_id]} handler'
+                        )
                 self.__broker.commit_current_fetched_message()
 
     def parse_pv_url(self, pv_url):
@@ -174,6 +162,28 @@ class dml:
 
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
+
+
+    def __wait_for_reply(self, new_reply_id, timeout) -> (int, any):
+        with self.reply_wait_condition:
+            got_it = self.reply_wait_condition.wait(timeout)
+            if(got_it is False):
+                # the timeout is expired, so delete the answer slot
+                # and rise exception
+                del(self.reply_message[new_reply_id])
+                return -2, None
+            if self.reply_message[new_reply_id] is None:
+                return -1
+            
+            reply_msg = self.reply_message[new_reply_id]
+            message = None
+            error = reply_msg['error']
+            if 'message' in reply_msg:
+                message = reply_msg['message']   
+            del(self.reply_message[new_reply_id])
+            if error != 0:
+                raise OperationError(error, message)
+            return 0, message
 
     def wait_for_backends(self):
         logging.debug("Waiting for join kafka reply topic")
@@ -257,7 +267,7 @@ class dml:
         with self.reply_wait_condition:
             # init reply slot
             self.reply_message[new_reply_id] = None
-                # send message to k2eg
+            # send message to k2eg
             self.__broker.send_put_command(
                 pv_name,
                 value,
@@ -284,8 +294,9 @@ class dml:
                 del(self.reply_message[new_reply_id])
                 if error != 0:
                     raise OperationError(error, message)
+    
 
-    def monitor(self, pv_url: str, handler: Callable[[str, dict], None]):  # noqa: E501
+    def monitor(self, pv_url: str, handler: Callable[[str, dict], None], timeout: float = None):  # noqa: E501
         """ Add a new monitor for pv if it is not already activated
         Parameters
                 ----------
@@ -298,28 +309,45 @@ class dml:
                 True: the monitor has been activated
                 False: otherwhise
         """
+        fetched = False
         protocol, pv_name = self.parse_pv_url(pv_url)
 
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
+        
+        new_reply_id = str(uuid.uuid1())
+        with self.reply_wait_condition:
+            # init reply slot
+            self.reply_message[new_reply_id] = None
 
-        with self.__lock.gen_wlock():
             if pv_name in self.__monitor_pv_handler:
                 logging.info(
                     f"Monitor already activate for pv {pv_name}")
                 return
             self.__monitor_pv_handler[pv_name] = handler
             self.__broker.add_topic(self.__normalize_pv_name(pv_name))
+            # send message to k2eg from activate (only for last topics) 
+            # monitor(just in case it is not already activated)
+            self.__broker.send_start_monitor_command(
+                pv_name,
+                protocol,
+                self.__normalize_pv_name(pv_name),
+                new_reply_id,
+            )
 
-        # send message to k2eg from activate (only for last topics) 
-        # monitor(just in case it is not already activated)
-        self.__broker.send_start_monitor_command(
-            pv_name,
-            protocol,
-            self.__normalize_pv_name(pv_name)
-        )
-    
-    def stop_monitor(self, pv_name: str):
+            while(not fetched):
+                op_res, result =  self.__wait_for_reply(new_reply_id, timeout)
+                if op_res == -2:
+                    # raise timeout exception
+                    raise OperationTimeout(
+                            f"Timeout during start monitor operation for {pv_name}"
+                            )
+                elif op_res == -1:
+                    continue;
+                else:
+                    return result
+
+    def stop_monitor(self, pv_name: str, timeout: float = None):
         """ Stop a new monitor for pv if it is not already activated
         Parameters
                 ----------
@@ -332,22 +360,38 @@ class dml:
                 True: the monitor has been activated
                 False: otherwhise
         """
+        fetched = False
         self.__check_pv_name(pv_name)
-
-        with self.__lock.gen_wlock():
+        new_reply_id = str(uuid.uuid1())
+        with self.reply_wait_condition:
             if pv_name not in self.__monitor_pv_handler:
                 logging.info(
                     f"Monitor already stopped for pv {pv_name}")
                 return
+            # init reply slot
+            self.reply_message[new_reply_id] = None
             del self.__monitor_pv_handler[pv_name]
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
 
-        # send message to k2eg from activate (only for last topics) 
-        # monitor(just in case it is not already activated)
-        self.__broker.send_stop_monitor_command(
-            pv_name,
-            self.__normalize_pv_name(pv_name)
-        )
+            # send message to k2eg from activate (only for last topics) 
+            # monitor(just in case it is not already activated)
+            self.__broker.send_stop_monitor_command(
+                pv_name,
+                self.__normalize_pv_name(pv_name),
+                new_reply_id
+            )
+            while(not fetched):
+                op_res, result =  self.__wait_for_reply(new_reply_id, timeout)
+                if op_res == -2:
+                    # raise timeout exception
+                    raise OperationTimeout(
+                            f"Timeout during stop monitor operation for {pv_name}"
+                            )
+                elif op_res == -1:
+                    continue;
+                else:
+                    return result
+        
 
     def close(self):
         self.__consume_data = False

@@ -1,0 +1,43 @@
+PRODUCER start-monitor-message
+topic: cmd-in-topic
+key: mon-a
+{
+    "command": "monitor",
+    "serialization":"Msgpack",
+    "pv_name":"channel:ramp:ramp",
+    "protocol":"pva",
+    "activate":true,
+    "reply_id":"ad06e9ea-5285-11ee-ace4-0242ac130004",
+    "reply_topic":"app-test-reply",
+    "monitor_destination_topic":"app-test-reply"
+}
+###
+
+PRODUCER start-monitor-alternate-topic-message
+topic: cmd-in-topic
+key: mon-a
+{
+    "command": "monitor",
+    "serialization":"Msgpack",
+    "pv_name":"channel:ramp:ramp",
+    "protocol":"pva",
+    "activate":false,
+    "reply_id":"ad06e9ea-5285-11ee-ace4-0242ac130004",
+    "reply_topic":"app-test-reply",
+    "monitor_destination_topic":"app-test-reply"
+}
+###
+
+PRODUCER start-monitor-alternate-topic-message
+topic: app-test-reply
+key: mon-a
+{
+    "command": "monitor",
+    "serialization":"Msgpack",
+    "pv_name":"channel:ramp:ramp",
+    "protocol":"pva",
+    "activate":false,
+    "reply_id":"ad06e9ea-5285-11ee-ace4-0242ac130004",
+    "reply_topic":"app-test-reply",
+    "monitor_destination_topic":"app-test-reply"
+}

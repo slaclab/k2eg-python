@@ -9,7 +9,7 @@ key: mon-a
     "activate":true,
     "reply_id":"ad06e9ea-5285-11ee-ace4-0242ac130004",
     "reply_topic":"app-test-reply",
-    "monitor_destination_topic":"app-test-reply"
+    "monitor_dest_topic":"monitor-data-in"
 }
 ###
 
@@ -24,7 +24,7 @@ key: mon-a
     "activate":false,
     "reply_id":"ad06e9ea-5285-11ee-ace4-0242ac130004",
     "reply_topic":"app-test-reply",
-    "monitor_destination_topic":"app-test-reply"
+    "monitor_dest_topic":"monitor-data-in"
 }
 ###
 
@@ -39,5 +39,5 @@ key: mon-a
     "activate":false,
     "reply_id":"ad06e9ea-5285-11ee-ace4-0242ac130004",
     "reply_topic":"app-test-reply",
-    "monitor_destination_topic":"app-test-reply"
+    "monitor_dest_topic":"monitor-data-in"
 }

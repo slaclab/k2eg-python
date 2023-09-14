@@ -221,7 +221,7 @@ class Broker:
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id,
             "activate": True,
-            "monitor-destination-topic": pv_reply_topic
+            "monitor_dest_topic": pv_reply_topic
         }
         self.send_command(json.dumps(monitor_json_msg))    
 
@@ -233,7 +233,7 @@ class Broker:
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id,
             "activate": False,
-            "monitor-destination-topic": pv_reply_topic
+            "monitor_dest_topic": pv_reply_topic
         }
         self.send_command(json.dumps(monitor_json_msg))
     

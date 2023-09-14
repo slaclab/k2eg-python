@@ -174,16 +174,15 @@ class dml:
                 return -2, None
             if self.reply_message[new_reply_id] is None:
                 return -1
-            
             reply_msg = self.reply_message[new_reply_id]
-            message = None
-            error = reply_msg['error']
-            if 'message' in reply_msg:
-                message = reply_msg['message']   
             del(self.reply_message[new_reply_id])
+            error = reply_msg['error']
             if error != 0:
-                raise OperationError(error, message)
-            return 0, message
+                str_msg = None
+                if 'message' in reply_msg:
+                    str_msg = reply_msg['message']   
+                raise OperationError(error, str_msg)
+            return 0, reply_msg
 
     def wait_for_backends(self):
         logging.debug("Waiting for join kafka reply topic")
@@ -198,46 +197,33 @@ class dml:
         if protocol.lower() != "pva" and protocol.lower() != "ca":
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
         
-        # wait for consumer joined the topic
-        self.__broker.wait_for_reply_available()
-        result = None
         new_reply_id = str(uuid.uuid1())
         fetched = False
-        # wait for response
-        while(not fetched):
-            logging.info("Send and wait for message")
-            with self.reply_wait_condition:
-                # clear the reply message for the requested pv
-                self.reply_message[new_reply_id] = None
-                # send message to k2eg
-                self.__broker.send_get_command(
-                    pv_name,
-                    protocol.lower(),
-                    new_reply_id
-                )
-                got_it = self.reply_wait_condition.wait(timeout)
-                if(got_it is False):
-                    # the timeout is expired, so delete the answer slot
-                    # and rise exception
-                    del(self.reply_message[new_reply_id])
+        result = None
+        with self.reply_wait_condition:
+            # clear the reply message for the requested pv
+            self.reply_message[new_reply_id] = None
+            # send message to k2eg
+            self.__broker.send_get_command(
+                pv_name,
+                protocol.lower(),
+                new_reply_id
+            )
+            while(not fetched):
+                op_res, result =  self.__wait_for_reply(new_reply_id, timeout)
+                if op_res == -2:
+                    # raise timeout exception
                     raise OperationTimeout(
-                        f"Timeout during get operation for {pv_name}"
-                        )
-                if self.reply_message[new_reply_id] is None:
-                    continue
-                fetched = True
-
-                message = None
-                result = None
-                error = self.reply_message[new_reply_id]['error']
-                if 'message' in self.reply_message[new_reply_id]:
-                    message = self.reply_message[new_reply_id]['message']
-                if error == 0:
-                    result = self.reply_message[new_reply_id][pv_name]
-                del(self.reply_message[new_reply_id])
-                if error != 0:
-                    raise OperationError(error, message)
-        return result
+                            f"Timeout during start monitor operation for {pv_name}"
+                            )
+                elif op_res == -1:
+                    continue;
+                else:
+                    fetched = True
+        if result is not None and pv_name in result:
+            return result[pv_name]
+        else:
+            return result
                 
     def put(self, pv_url: str, value: any, timeout: float = None):
         """ Set the value for a single pv
@@ -275,25 +261,16 @@ class dml:
                 new_reply_id
             )
             while(not fetched):
-                got_it = self.reply_wait_condition.wait(timeout)
-                if(got_it is False):
-                    # the timeout is expired, so delete the answer slot
-                    # and rise exception
-                    del(self.reply_message[new_reply_id])
+                op_res, result =  self.__wait_for_reply(new_reply_id, timeout)
+                if op_res == -2:
+                    # raise timeout exception
                     raise OperationTimeout(
-                        f"Timeout during put operation for {pv_name}"
-                        )
-                if self.reply_message[new_reply_id] is None:
-                    continue
-                fetched = True
-                reply_msg = self.reply_message[new_reply_id]
-                message = None
-                error = reply_msg['error']
-                if 'message' in reply_msg:
-                    message = reply_msg['message']   
-                del(self.reply_message[new_reply_id])
-                if error != 0:
-                    raise OperationError(error, message)
+                            f"Timeout during start monitor operation for {pv_name}"
+                            )
+                elif op_res == -1:
+                    continue;
+                else:
+                    return result
     
 
     def monitor(self, pv_url: str, handler: Callable[[str, dict], None], timeout: float = None):  # noqa: E501

@@ -5,7 +5,7 @@ requires = ["setuptools", "wheel"]
 name = "k2eg"
 version = "0.0.0"
 description = "A k2eg library"
-readme = "Permit to interact with k2eg throught kakfka"
+readme = "README.md"
 authors = [{name = "Claudio Bisegni", email = "bisegni@slac.stanford.edu"}]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -31,9 +31,3 @@ dependencies = [
 
 [project.scripts]
 k2eg = "k2eg.cli.__main__:main"
-
-[project.optional-dependencies]
-test = [
-    "pytest-runner",
-    "pytest"
-]

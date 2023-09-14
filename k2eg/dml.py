@@ -143,9 +143,12 @@ class dml:
                         self.reply_message[msg_id] = decoded_message
                         self.reply_wait_condition.notifyAll()
                     elif msg_id in self.__monitor_pv_handler:
-                        self.__monitor_pv_handler[msg_id](msg_id, decoded_message[msg_id])
+                        self.__monitor_pv_handler[msg_id](
+                            msg_id, decoded_message[msg_id]
+                            )
                         logging.debug(
-                            f'read message sent to {self.__monitor_pv_handler[msg_id]} handler'
+                            'read message sent '+
+                            f'to {self.__monitor_pv_handler[msg_id]} handler'
                         )
                 self.__broker.commit_current_fetched_message()
 
@@ -217,7 +220,7 @@ class dml:
                             f"Timeout during start monitor operation for {pv_name}"
                             )
                 elif op_res == -1:
-                    continue;
+                    continue
                 else:
                     fetched = True
         if result is not None and pv_name in result:
@@ -242,9 +245,7 @@ class dml:
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
         
-        # wait for consumer joined the topic        
-        error = 0
-        message = None
+        # wait for consumer joined the topic
         fetched = False
         self.__broker.wait_for_reply_available()
         new_reply_id = str(uuid.uuid1())
@@ -268,7 +269,7 @@ class dml:
                             f"Timeout during start monitor operation for {pv_name}"
                             )
                 elif op_res == -1:
-                    continue;
+                    continue
                 else:
                     return result
     
@@ -320,7 +321,7 @@ class dml:
                             f"Timeout during start monitor operation for {pv_name}"
                             )
                 elif op_res == -1:
-                    continue;
+                    continue
                 else:
                     return result
 
@@ -365,7 +366,7 @@ class dml:
                             f"Timeout during stop monitor operation for {pv_name}"
                             )
                 elif op_res == -1:
-                    continue;
+                    continue
                 else:
                     return result
         

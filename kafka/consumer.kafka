@@ -1,0 +1,6 @@
+CONSUMER consumer-group-id
+topic: app-test-reply
+partitions: 0
+from: 1
+
+###

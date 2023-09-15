@@ -9,7 +9,7 @@ k: k2eg.dml = None
 def my_setup(request):
     print('Enable k2eg')
     global k
-    k = k2eg.dml('test', 'app-test')
+    k = k2eg.dml('lcls', 'app-one')
     def fin():
         global k
         if k is not None:
@@ -48,7 +48,7 @@ def test_exception_on_get_with_bad_protocol():
                     k.get('unkonwn://', timeout=0.5)
 
 def test_k2eg_get():
-    get_value = k.get('pva://channel:ramp:ramp')
+    get_value = k.get('ca://VGXX:L3B:1602:PLOG')
     assert get_value is not None, "value should not be None"
 
 def test_k2eg_get_timeout():
@@ -68,13 +68,13 @@ def test_k2eg_monitor():
             nonlocal received_message
             received_message = new_value
 
-        k.monitor('pva://channel:ramp:ramp', monitor_handler)
+        k.monitor('ca://VGXX:L3B:1602:PLOG', monitor_handler)
         while received_message is None:
             time.sleep(2)
         
         assert received_message is not None, "value should not be None"
     finally:
-        k.stop_monitor('channel:ramp:ramp')
+        k.stop_monitor('VGXX:L3B:1602:PLOG')
 
 def test_k2eg_monitor_stop_restart():
     try:

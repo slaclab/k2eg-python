@@ -126,8 +126,6 @@ class dml:
                         f"{message.topic()} [{message.partition()}]reached "+
                         f"end at offset {message.offset()}"
                     )
-                elif message.error().code() == KafkaError._UNKNOWN_PARTITION:
-                    logging.error(message.error())
                 else:
                     logging.error(message.error())
             else:
@@ -166,26 +164,25 @@ class dml:
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
-
     def __wait_for_reply(self, new_reply_id, timeout) -> (int, any):
-        with self.reply_wait_condition:
-            got_it = self.reply_wait_condition.wait(timeout)
-            if(got_it is False):
-                # the timeout is expired, so delete the answer slot
-                # and rise exception
-                del(self.reply_message[new_reply_id])
-                return -2, None
-            if self.reply_message[new_reply_id] is None:
-                return -1
-            reply_msg = self.reply_message[new_reply_id]
+        #with self.reply_wait_condition:
+        got_it = self.reply_wait_condition.wait(timeout)
+        if(got_it is False):
+            # the timeout is expired, so delete the answer slot
+            # and rise exception
             del(self.reply_message[new_reply_id])
-            error = reply_msg['error']
-            if error != 0:
-                str_msg = None
-                if 'message' in reply_msg:
-                    str_msg = reply_msg['message']   
-                raise OperationError(error, str_msg)
-            return 0, reply_msg
+            return -2, None
+        if self.reply_message[new_reply_id] is None:
+            return -1
+        reply_msg = self.reply_message[new_reply_id]
+        del(self.reply_message[new_reply_id])
+        error = reply_msg['error']
+        if error != 0:
+            str_msg = None
+            if 'message' in reply_msg:
+                str_msg = reply_msg['message']   
+            raise OperationError(error, str_msg)
+        return 0, reply_msg
 
     def wait_for_backends(self):
         logging.debug("Waiting for join kafka reply topic")

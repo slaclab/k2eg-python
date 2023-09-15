@@ -1,8 +1,5 @@
-import time
-import uuid
-from confluent_kafka import Consumer, TopicPartition, Producer, KafkaError, KafkaException
+from confluent_kafka import Consumer
 import confluent_kafka
-from confluent_kafka.admin import AdminClient
 
 
 def my_assign (consumer, partitions):

@@ -73,7 +73,8 @@ class Broker:
             'group.id': group_name,
             'group.instance.id': group_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
-            'enable.auto.commit':'true',
+            'enable.auto.commit': 'true',
+            'allow.auto.create.topics': 'false',
             'debug': 'consumer,cgrp,topic',
         }
         self.__consumer = Consumer(config_consumer)

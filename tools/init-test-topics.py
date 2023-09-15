@@ -24,7 +24,6 @@ def create_topics(admin, topics):
 
 def delete_topics(a, topics):
     """ delete topics """
-
     # Call delete_topics to asynchronously delete topics, a future is returned.
     # By default this operation on the broker returns immediately while
     # topics are deleted in the background. But here we give it some time (30s)
@@ -44,7 +43,7 @@ def delete_topics(a, topics):
 if __name__ == "__main__":
     admin = AdminClient({'bootstrap.servers': 'kafka:9092','debug': 'cgrp,topic,fetch'})
     print('delete topic')
-    delete_topics(admin, ['cmd-in-topic', 'app-test-reply'])
+    delete_topics(admin, ['cmd-in-topic', 'app-test-reply', 'ke2g-app-reply'])
     sleep(5)
     print('recreate topic')
-    create_topics(admin, ['cmd-in-topic', 'app-test-reply'])
+    create_topics(admin, ['cmd-in-topic', 'app-test-reply', 'ke2g-app-reply'])

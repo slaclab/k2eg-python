@@ -3,6 +3,7 @@ import os
 import logging
 import threading
 import configparser
+import uuid
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END
 from confluent_kafka import KafkaError, KafkaException
 from confluent_kafka.admin import AdminClient
@@ -32,7 +33,7 @@ class Broker:
     def __init__(
         self, 
         environment_id: str, 
-        group_name: str =  "k2eg-group",
+        group_name: str = str(uuid.uuid4())[:8],
         app_name:str =  "ke2g-app",
         app_instance_unique_id:str = "1"):
         """

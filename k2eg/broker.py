@@ -1,10 +1,11 @@
 import json
 import os
-import uuid
 import logging
 import threading
 import configparser
-from confluent_kafka import Consumer, TopicPartition, Producer, KafkaError
+import uuid
+from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END
+from confluent_kafka import KafkaError, KafkaException
 from confluent_kafka.admin import AdminClient
 
 class TopicUnknown(Exception):
@@ -32,8 +33,9 @@ class Broker:
     def __init__(
         self, 
         environment_id: str, 
-        group_name: str =  str(uuid.uuid1()),
-        app_name:str =  str(uuid.uuid1())):
+        group_name: str = str(uuid.uuid4())[:8],
+        app_name:str =  "ke2g-app",
+        app_instance_unique_id:str = "1"):
         """
         Parameters
         ----------
@@ -51,6 +53,11 @@ class Broker:
             'K2EG_PYTHON_CONFIGURATION_PATH_FOLDER', 
             os.path.dirname(os.path.realpath(__file__))
         ) 
+        enable_kafka_debug = os.getenv(
+            'K2EG_PYTHON_ENABLE_KAFKA_DEBUG_LOG', 
+            'false'
+        ).lower in ("yes", "true", "t", "1")
+        enable_kafka_debug = True
         self.__enviroment_set = enviroment_set
         # Create a new ConfigParser object
         self.__config = configparser.ConfigParser()
@@ -69,10 +76,14 @@ class Broker:
                 self.__enviroment_set, 'kafka_broker_url'
                 ), 
             'group.id': group_name,
-            'client.id': group_name+'_'+ str(uuid.uuid1())[:8],
+            'group.instance.id': group_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
-            #'debug': 'consumer,cgrp,topic,fetch',
+            'enable.auto.commit': 'false',
+            'allow.auto.create.topics': 'true',
         }
+        if enable_kafka_debug:
+            config_consumer['debug'] = 'consumer,cgrp,topic,fetch'
+
         self.__consumer = Consumer(config_consumer)
         config_producer = {
             'bootstrap.servers': self.__config.get(
@@ -85,35 +96,29 @@ class Broker:
                 self.__enviroment_set, 'kafka_broker_url'
                 )})
         self.__reply_topic = app_name + '-reply'
-        #self.__create_topics(self.__reply_topic)
         self.__reply_partition_assigned = threading.Event()
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
-        self.__initialized=True
         self.__reply_topic_joined = False
+        # wait for consumer join the partition
+        self.__consumer.poll(0.1)
+        self.__reply_partition_assigned.wait()
 
-    # def __create_topics(self, topic_name: str):
-    #     new_topics = [NewTopic(
-    #         topic_name, 
-    #         num_partitions=1, 
-    #         replication_factor=1)]
-    #     fs = self.__admin.create_topics(new_topics)
-    #     for topic, f in fs.items():
-    #         try:
-    #             f.result()  # The result itself is None
-    #             logging.debug(f"Topic {topic} created")
-    #         except KafkaException as e:
-    #             if e.args[0].code() == KafkaError.TOPIC_ALREADY_EXISTS:
-    #                 logging.debug(f"Topic {topic} already exists")
-    #             else:
-    #                 logging.FATAL(f"Failed to create topic {topic}: {e}")
-
+    # point always to the end of the topic
     def __on_assign(self, consumer, partitions):
         logging.debug(f"Joined partition {partitions}")
-        for t in partitions:
-            if t.topic == self.__reply_topic:
+        for p in partitions:
+            if p.topic == self.__reply_topic:
                 self.__reply_topic_joined = True
-        self.__reply_partition_assigned.set()
+                self.__reply_partition_assigned.set()
+                #low, high = consumer.get_watermark_offsets(p)
+                if p.offset==-1:
+                    p.offset = OFFSET_END
+        positions = consumer.position(partitions)
+        logging.debug('assign: {}'.format(' '.join(map(str, partitions))))
+        logging.debug('position: {}'.format(' '.join(map(str, positions))))
+        consumer.assign(partitions)
+        print('Assigned partition')
 
     def __check_config(self, app_name):
         if not self.__config.has_option(self.__enviroment_set, 'kafka_broker_url'):
@@ -146,12 +151,15 @@ class Broker:
         ]
 
         # Get the offsets for the specific timestamps
-        offsets_for_times = self.__consumer.offsets_for_times(topic_partitions)
-
-        # Set the starting offset of the consumer to the returned offsets
-        for tp in offsets_for_times:
-            if tp.offset != -1:  # If an offset was found
-                self.__consumer.seek(tp)
+        try:
+            offsets_for_times = self.__consumer.offsets_for_times(topic_partitions)
+            # Set the starting offset of the consumer to the returned offsets
+            for tp in offsets_for_times:
+                if tp.offset != -1:  # If an offset was found
+                    self.__consumer.seek(tp)
+        except KafkaException as e:
+            logging.error(e)
+       
     
     def get_next_message(self, timeout = 0.1):
         message = self.__consumer.poll(timeout)

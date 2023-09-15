@@ -18,6 +18,7 @@ services:
           sleep 30
           pytest -o log_cli=true
     environment:
+      K2EG_PYTHON_ENABLE_KAFKA_DEBUG_LOG: true
       WAIT_HOSTS: kafka:9092
 
   epics_pva:

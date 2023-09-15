@@ -9,7 +9,7 @@ k: k2eg.dml = None
 def my_setup(request):
     print('Enable k2eg')
     global k
-    k = k2eg.dml('lcls', 'app-one')
+    k = k2eg.dml('test', 'app-test')
     def fin():
         global k
         if k is not None:

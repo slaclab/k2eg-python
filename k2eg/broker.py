@@ -4,7 +4,8 @@ import time
 import logging
 import threading
 import configparser
-from confluent_kafka import Consumer, TopicPartition, Producer, KafkaError, KafkaException
+from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END
+from confluent_kafka import KafkaError, KafkaException
 from confluent_kafka.admin import AdminClient
 
 class TopicUnknown(Exception):
@@ -72,8 +73,8 @@ class Broker:
             'group.id': group_name,
             'group.instance.id': group_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
-            'enable.auto.commit':'true',
-            'debug': 'consumer,cgrp,topic',
+            'enable.auto.commit':'false',
+            #'debug': 'consumer,cgrp,topic',
         }
         self.__consumer = Consumer(config_consumer)
         config_producer = {
@@ -90,16 +91,21 @@ class Broker:
         self.__reply_partition_assigned = threading.Event()
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
-        self.__initialized=True
         self.__reply_topic_joined = False
-        self.reset_reply_topic_to_ts(time.time())
 
+    # point always to the end of the topic
     def __on_assign(self, consumer, partitions):
         logging.debug(f"Joined partition {partitions}")
-        for t in partitions:
-            if t.topic == self.__reply_topic:
+        for p in partitions:
+            if p.topic == self.__reply_topic:
                 self.__reply_topic_joined = True
-        self.__reply_partition_assigned.set()
+                self.__reply_partition_assigned.set()
+                #low, high = consumer.get_watermark_offsets(p)
+                p.offset = OFFSET_END
+        positions = consumer.position(partitions)
+        logging.debug('assign: {}'.format(' '.join(map(str, partitions))))
+        logging.debug('position: {}'.format(' '.join(map(str, positions))))
+        consumer.assign(partitions)
 
     def __check_config(self, app_name):
         if not self.__config.has_option(self.__enviroment_set, 'kafka_broker_url'):

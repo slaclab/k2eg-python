@@ -193,10 +193,10 @@ class dml:
             raise OperationTimeout when timeout has expired
         """
         protocol, pv_name = self.parse_pv_url(pv_url)
-        
         if protocol.lower() != "pva" and protocol.lower() != "ca":
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
         
+        self.__broker.wait_for_reply_available()
         new_reply_id = str(uuid.uuid1())
         fetched = False
         result = None
@@ -238,10 +238,9 @@ class dml:
             return the error code and a message in case the error code is not 0
         """
         protocol, pv_name = self.parse_pv_url(pv_url)
-
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
-        
+        self.__broker.wait_for_reply_available()
         # wait for consumer joined the topic
         fetched = False
         self.__broker.wait_for_reply_available()
@@ -286,10 +285,9 @@ class dml:
         """
         fetched = False
         protocol, pv_name = self.parse_pv_url(pv_url)
-
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
-        
+        self.__broker.wait_for_reply_available()
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
             # init reply slot
@@ -335,6 +333,7 @@ class dml:
                 True: the monitor has been activated
                 False: otherwhise
         """
+        self.__broker.wait_for_reply_available()
         fetched = False
         self.__check_pv_name(pv_name)
         new_reply_id = str(uuid.uuid1())

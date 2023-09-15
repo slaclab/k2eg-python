@@ -72,8 +72,8 @@ class Broker:
             'group.id': group_name,
             'group.instance.id': group_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
-            'enable.auto.commit':'false',
-            #'debug': 'consumer,cgrp,topic',
+            'enable.auto.commit':'true',
+            'debug': 'consumer,cgrp,topic',
         }
         self.__consumer = Consumer(config_consumer)
         config_producer = {
@@ -91,6 +91,9 @@ class Broker:
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
         self.__reply_topic_joined = False
+        # wait for consumer join the partition
+        self.__consumer.poll(0.1)
+        self.__reply_partition_assigned.wait()
 
     # point always to the end of the topic
     def __on_assign(self, consumer, partitions):
@@ -100,7 +103,8 @@ class Broker:
                 self.__reply_topic_joined = True
                 self.__reply_partition_assigned.set()
                 #low, high = consumer.get_watermark_offsets(p)
-                p.offset = OFFSET_END
+                if p.offset==-1:
+                    p.offset = OFFSET_END
         positions = consumer.position(partitions)
         logging.debug('assign: {}'.format(' '.join(map(str, partitions))))
         logging.debug('position: {}'.format(' '.join(map(str, positions))))

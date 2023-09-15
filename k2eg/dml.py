@@ -196,7 +196,6 @@ class dml:
         if protocol.lower() != "pva" and protocol.lower() != "ca":
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
         
-        self.__broker.wait_for_reply_available()
         new_reply_id = str(uuid.uuid1())
         fetched = False
         result = None
@@ -240,12 +239,10 @@ class dml:
         protocol, pv_name = self.parse_pv_url(pv_url)
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The protocol need to be one of 'pva'  'ca'")
-        self.__broker.wait_for_reply_available()
+
         # wait for consumer joined the topic
         fetched = False
-        self.__broker.wait_for_reply_available()
         new_reply_id = str(uuid.uuid1())
-
         logging.info("Send and wait for message")
         with self.reply_wait_condition:
             # init reply slot
@@ -287,12 +284,10 @@ class dml:
         protocol, pv_name = self.parse_pv_url(pv_url)
         if protocol.lower() not in ("pva", "ca"):
             raise ValueError("The portocol need to be one of 'pva'  'ca'")
-        self.__broker.wait_for_reply_available()
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
             # init reply slot
             self.reply_message[new_reply_id] = None
-
             if pv_name in self.__monitor_pv_handler:
                 logging.info(
                     f"Monitor already activate for pv {pv_name}")
@@ -333,7 +328,6 @@ class dml:
                 True: the monitor has been activated
                 False: otherwhise
         """
-        self.__broker.wait_for_reply_available()
         fetched = False
         self.__check_pv_name(pv_name)
         new_reply_id = str(uuid.uuid1())
@@ -346,7 +340,6 @@ class dml:
             self.reply_message[new_reply_id] = None
             del self.__monitor_pv_handler[pv_name]
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
-
             # send message to k2eg from activate (only for last topics) 
             # monitor(just in case it is not already activated)
             self.__broker.send_stop_monitor_command(

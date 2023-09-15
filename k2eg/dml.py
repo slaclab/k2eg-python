@@ -292,8 +292,6 @@ class dml:
                 logging.info(
                     f"Monitor already activate for pv {pv_name}")
                 return
-            self.__monitor_pv_handler[pv_name] = handler
-            self.__broker.add_topic(self.__normalize_pv_name(pv_name))
             # send message to k2eg from activate (only for last topics) 
             # monitor(just in case it is not already activated)
             self.__broker.send_start_monitor_command(
@@ -313,6 +311,9 @@ class dml:
                 elif op_res == -1:
                     continue
                 else:
+                    # all is gone ok i can register the handler and subscribe
+                    self.__monitor_pv_handler[pv_name] = handler
+                    self.__broker.add_topic(self.__normalize_pv_name(pv_name))
                     return result
 
     def stop_monitor(self, pv_name: str, timeout: float = None):

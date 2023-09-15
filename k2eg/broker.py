@@ -53,6 +53,11 @@ class Broker:
             'K2EG_PYTHON_CONFIGURATION_PATH_FOLDER', 
             os.path.dirname(os.path.realpath(__file__))
         ) 
+        enable_kafka_debug = os.getenv(
+            'K2EG_PYTHON_ENABLE_KAFKA_DEBUG_LOG', 
+            'false'
+        ).lower in ("yes", "true", "t", "1")
+        enable_kafka_debug = True
         self.__enviroment_set = enviroment_set
         # Create a new ConfigParser object
         self.__config = configparser.ConfigParser()
@@ -73,10 +78,12 @@ class Broker:
             'group.id': group_name,
             'group.instance.id': group_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
-            'enable.auto.commit': 'true',
-            'allow.auto.create.topics': 'false',
-            'debug': 'consumer,cgrp,topic',
+            'enable.auto.commit': 'false',
+            'allow.auto.create.topics': 'true',
         }
+        if enable_kafka_debug:
+            config_consumer['debug'] = 'consumer,cgrp,topic,fetch'
+
         self.__consumer = Consumer(config_consumer)
         config_producer = {
             'bootstrap.servers': self.__config.get(
@@ -111,6 +118,7 @@ class Broker:
         logging.debug('assign: {}'.format(' '.join(map(str, partitions))))
         logging.debug('position: {}'.format(' '.join(map(str, positions))))
         consumer.assign(partitions)
+        print('Assigned partition')
 
     def __check_config(self, app_name):
         if not self.__config.has_option(self.__enviroment_set, 'kafka_broker_url'):

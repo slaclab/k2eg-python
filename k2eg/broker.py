@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import logging
@@ -13,6 +14,36 @@ class TopicUnknown(Exception):
     def __init__(self, message):            
         # Call the base class constructor with the parameters it needs
         super().__init__(message)
+
+class TopicChecker:
+    def __init__(self):
+        self.__topics_to_check = []
+        self.__check_timeout = None
+
+    def __check_for_topic(self, topic_name, consumer:Consumer):
+        cluster_metadata = consumer.list_topics(topic_name, 1.0)
+        return cluster_metadata.topics[topic_name].error \
+                != KafkaError.UNKNOWN_TOPIC_OR_PART
+
+    def add_topic(self, topic_name):
+        logging.debug(f"Add topic {topic_name} to checker")
+        self.__topics_to_check.append(topic_name)
+
+    def update_metadata(self, consumer: Consumer) -> bool:
+        to_check =  self.__check_timeout is None or \
+                    (self.__check_timeout is not None and \
+                    datetime.datetime.now() > self.__check_timeout)
+        if to_check:
+            for t in self.__topics_to_check:
+                found = self.__check_for_topic(t, consumer)
+                logging.debug(f"Check for topic {t} => {found}")
+                if found:
+                    logging.debug(f"Remove topic {t} from checker")
+                    self.__topics_to_check.remove(t)
+
+            if(len(self.__topics_to_check)>0):
+                self.__check_timeout = datetime.datetime.now() \
+                    + datetime.timedelta(seconds=3)
 
 class Broker:
     """
@@ -80,6 +111,7 @@ class Broker:
             'auto.offset.reset': 'latest',
             'enable.auto.commit': 'false',
             'allow.auto.create.topics': 'true',
+            'topic.metadata.refresh.interval.ms': '60000'
         }
         if enable_kafka_debug:
             config_consumer['debug'] = 'consumer,cgrp,topic,fetch'
@@ -100,6 +132,7 @@ class Broker:
         self.__subribed_topics = [self.__reply_topic]
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
         self.__reply_topic_joined = False
+        self.__topic_checker = TopicChecker()
         # wait for consumer join the partition
         self.__consumer.poll(0.1)
         self.__reply_partition_assigned.wait()
@@ -163,14 +196,13 @@ class Broker:
     
     def get_next_message(self, timeout = 0.1):
         message = self.__consumer.poll(timeout)
+        # give a chanche to update metadata ofr pending topics
+        self.__topic_checker.update_metadata(self.__consumer)
         if message is None:
             return None    
         if message.error():
             if message.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
-                # if self.__reply_topic == message.topic():
-                #     self.__reply_topic_joined = False
-                #     self.__reply_partition_assigned.set()
-                logging.error(message.error())
+                self.__topic_checker.add_topic(message.topic())
         return message
     
     def commit_current_fetched_message(self):
@@ -183,6 +215,9 @@ class Broker:
                 )
         if new_topic not in self.__subribed_topics:
             self.__subribed_topics.append(new_topic)
+            self.__consumer.subscribe(
+                self.__subribed_topics, on_assign=self.__on_assign)
+        else:
             self.__consumer.subscribe(
                 self.__subribed_topics, on_assign=self.__on_assign)
 

@@ -30,4 +30,4 @@ dependencies = [
 ]
 
 [project.scripts]
-k2eg = "k2eg.cli.__main__:main"
+k2eg = "k2eg.cli.__main__:cli"

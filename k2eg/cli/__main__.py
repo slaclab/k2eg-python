@@ -18,8 +18,14 @@ in_shell: bool = False
 @click.group(chain=True, invoke_without_command=True)
 @click.pass_context
 @click.version_option(__version__.__version__, prog_name="K2EG demo cli")
-@click.option('-e', '--environment',  required=True, type=str, envvar='K2EG_CLI_DEFAULT_ENVIRONMENT')
-@click.option('-a', '--app-name',  required=True, type=str, envvar='K2EG_CLI_DEFAULT_APP_NAME')
+@click.option('-e', '--environment',  
+              required=True, 
+              type=str, 
+              envvar='K2EG_CLI_DEFAULT_ENVIRONMENT')
+@click.option('-a', '--app-name',  
+              required=True, 
+              type=str, 
+              envvar='K2EG_CLI_DEFAULT_APP_NAME')
 @click.option(
     "-l", "--log-level",
     type=LogLevel(extra=["VERBOSE", "NOTICE"]),

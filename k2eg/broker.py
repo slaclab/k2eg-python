@@ -155,7 +155,6 @@ class Broker:
             if p.offset==-1:
                 logging.debug(f'set new offset for {p.topic}')
                 p.offset = OFFSET_END
-        positions = consumer.position(partitions)
         consumer.assign(partitions)
 
 

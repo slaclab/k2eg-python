@@ -48,8 +48,8 @@ class TopicChecker:
 class Broker:
     """
     Represent the abstraction of the protocol 
-    which the k2eg client talk with the k2eg g
-    ateway
+    which the k2eg client talk with the k2eg 
+    gateway
 
     ...
 
@@ -58,14 +58,12 @@ class Broker:
 
     Methods
     -------
-    get_reply_topic()
-        Return the string of the reply topic
     """
     def __init__(
         self, 
-        environment_id: str, 
-        group_name: str = str(uuid.uuid4())[:8],
-        app_name:str =  "ke2g-app",
+        environment_id: str,
+        app_name:str,
+        group_name: str = 'k2eg-group-{}'.format(str(uuid.uuid4())),
         app_instance_unique_id:str = "1"):
         """
         Parameters

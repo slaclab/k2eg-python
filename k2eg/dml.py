@@ -36,6 +36,10 @@ class dml:
             self, 
             environment_id: str, 
             app_name: str):
+        if app_name is None:
+            raise ValueError(
+                "The app name is mandatory"
+            )
         self.__broker = Broker(environment_id, app_name)
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()

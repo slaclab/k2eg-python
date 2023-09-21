@@ -104,7 +104,7 @@ class Broker:
             'bootstrap.servers': self.__config.get(
                 self.__enviroment_set, 'kafka_broker_url'
                 ), 
-            'group.id': '{}-{}'.format(group_name, str(uuid.uuid4())[:8]),
+            'group.id': group_name,
             'group.instance.id': group_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
             'enable.auto.commit': 'false',

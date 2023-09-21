@@ -31,6 +31,12 @@ def test_uri_protocol_ioc():
     assert protocol == 'pva', "protocol should not be None"
     assert resource == 'ioa:a', "protocol should not be None"
 
+def test_uri_protocol_ioc_uppercase_and_dash():
+    protocol, resource = _filter_pv_uri('ca://VGXX-L3B-1602-PLOG')
+    assert protocol == 'ca', "protocol should not be None"
+    assert resource == 'VGXX-L3B-1602-PLOG', "protocol should not be None"
+
+
 def test_exception_on_get_without_protocol():
     with pytest.raises(ValueError, 
                     match=r".*url.*not.*formed"):

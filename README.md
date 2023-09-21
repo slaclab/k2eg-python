@@ -34,3 +34,5 @@ preconfigurated environment are stored into an internal folder.
 
 ### Custom configuration location
 The ***K2EG_PYTHON_CONFIGURATION_PATH_FOLDER*** environment variable can be used for specify a custom configuraiton folder
+***K2EG_CLI_DEFAULT_ENVIRONMENT*** => is the devault environment for the k2eg demo cli
+***K2EG_CLI_DEFAULT_APP_NAME*** => is the default app name to use for the demo cli

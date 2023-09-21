@@ -48,8 +48,8 @@ class TopicChecker:
 class Broker:
     """
     Represent the abstraction of the protocol 
-    which the k2eg client talk with the k2eg g
-    ateway
+    which the k2eg client talk with the k2eg 
+    gateway
 
     ...
 
@@ -58,14 +58,12 @@ class Broker:
 
     Methods
     -------
-    get_reply_topic()
-        Return the string of the reply topic
     """
     def __init__(
         self, 
-        environment_id: str, 
-        group_name: str = str(uuid.uuid4())[:8],
-        app_name:str =  "ke2g-app",
+        environment_id: str,
+        app_name:str,
+        group_name: str = 'k2eg-group-{}'.format(str(uuid.uuid4())),
         app_instance_unique_id:str = "1"):
         """
         Parameters
@@ -88,7 +86,7 @@ class Broker:
             'K2EG_PYTHON_ENABLE_KAFKA_DEBUG_LOG', 
             'false'
         ).lower in ("yes", "true", "t", "1")
-        enable_kafka_debug = True
+
         self.__enviroment_set = enviroment_set
         # Create a new ConfigParser object
         self.__config = configparser.ConfigParser()
@@ -113,8 +111,8 @@ class Broker:
             'allow.auto.create.topics': 'true',
             'topic.metadata.refresh.interval.ms': '60000'
         }
-        if enable_kafka_debug:
-            config_consumer['debug'] = 'consumer,cgrp,topic,fetch'
+        if enable_kafka_debug is True:
+            config_consumer['debug'] = 'consumer,cgrp,topic' #fetch
 
         self.__consumer = Consumer(config_consumer)
         config_producer = {
@@ -130,6 +128,8 @@ class Broker:
         self.__reply_topic = app_name + '-reply'
         self.__reply_partition_assigned = threading.Event()
         self.__subribed_topics = [self.__reply_topic]
+
+        # start consuming from reply topic
         self.__consumer.subscribe(self.__subribed_topics, on_assign=self.__on_assign)
         self.__reply_topic_joined = False
         self.__topic_checker = TopicChecker()
@@ -137,21 +137,26 @@ class Broker:
         self.__consumer.poll(0.1)
         self.__reply_partition_assigned.wait()
 
+    def __manage_old_state(self):
+        self.__consumer.poll(1.0)
+        assigned_topics = self.__consumer.assignment()
+        for t in assigned_topics:
+            logging.debug(f'latest assigned topic: {t}')
+        self.__consumer.unsubscribe()
+
     # point always to the end of the topic
     def __on_assign(self, consumer, partitions):
-        logging.debug(f"Joined partition {partitions}")
         for p in partitions:
+            logging.debug(f"Joined topic {p.topic} with partition {p.partition}")
             if p.topic == self.__reply_topic:
                 self.__reply_topic_joined = True
                 self.__reply_partition_assigned.set()
-                #low, high = consumer.get_watermark_offsets(p)
-                if p.offset==-1:
-                    p.offset = OFFSET_END
-        positions = consumer.position(partitions)
-        logging.debug('assign: {}'.format(' '.join(map(str, partitions))))
-        logging.debug('position: {}'.format(' '.join(map(str, positions))))
+            #low, high = consumer.get_watermark_offsets(p)
+            if p.offset==-1:
+                logging.debug(f'set new offset for {p.topic}')
+                p.offset = OFFSET_END
         consumer.assign(partitions)
-        print('Assigned partition')
+
 
     def __check_config(self, app_name):
         if not self.__config.has_option(self.__enviroment_set, 'kafka_broker_url'):
@@ -213,6 +218,7 @@ class Broker:
             raise ValueError(
                 f'The topic name {self.__reply_topic} cannot be used'
                 )
+        logging.debug(f'Start consuming from topic: {new_topic}')
         if new_topic not in self.__subribed_topics:
             self.__subribed_topics.append(new_topic)
             self.__consumer.subscribe(

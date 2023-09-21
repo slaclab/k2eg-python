@@ -18,13 +18,20 @@ in_shell: bool = False
 @click.group(chain=True, invoke_without_command=True)
 @click.pass_context
 @click.version_option(__version__.__version__, prog_name="K2EG demo cli")
-@click.option('--environment', envvar='K2EG_CLI_DEFAULT_ENVIRONMENT', default='test')
+@click.option('-e', '--environment',  
+              required=True, 
+              type=str, 
+              envvar='K2EG_CLI_DEFAULT_ENVIRONMENT')
+@click.option('-a', '--app-name',  
+              required=True, 
+              type=str, 
+              envvar='K2EG_CLI_DEFAULT_APP_NAME')
 @click.option(
     "-l", "--log-level",
     type=LogLevel(extra=["VERBOSE", "NOTICE"]),
     default=logging.INFO,
 )
-def cli(ctx, environment, log_level):
+def cli(ctx, environment, app_name, log_level):
     global k2eg_dml_instance
     global initilized
     global in_shell
@@ -40,9 +47,10 @@ def cli(ctx, environment, log_level):
             config_path = os.environ.get('K2EG_PYTHON_CONFIGURATION_PATH_FOLDER')
         logging.debug("Use configuration '{}'".format(config_path))
         logging.debug("Use environment '{}'".format(environment))
+        logging.debug("Use application name '{}'".format(app_name))
         # allocate k2eg in 
         logging.debug("K2g initilizing")
-        ctx.obj = k2eg_dml_instance = k2eg.dml(environment, 'demo-cli')
+        ctx.obj = k2eg_dml_instance = k2eg.dml(environment, app_name)
         initilized = True
     
     if ctx.invoked_subcommand is None:
@@ -54,7 +62,7 @@ def cli(ctx, environment, log_level):
     pass
 
 @cli.result_callback()
-def process_pipeline(processors, environment, log_level):
+def process_pipeline(processors, environment, app_name, log_level):
     if k2eg_dml_instance is not None and in_shell is False:
         logging.debug("Deinit dml")
         k2eg_dml_instance.close()

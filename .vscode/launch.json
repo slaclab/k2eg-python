@@ -29,7 +29,7 @@
             "module": "k2eg.cli",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["-l", "debug"]
+            "args": ["-l", "debug", "-e", "test", "-a", "app-test"]
         }
     ]
 }

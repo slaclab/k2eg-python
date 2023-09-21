@@ -35,8 +35,12 @@ class dml:
     def __init__(
             self, 
             environment_id: str, 
-            app_name: str = str(uuid.uuid1())):
-        self.__broker = Broker(environment_id, app_name, app_name)
+            app_name: str):
+        if app_name is None:
+            raise ValueError(
+                "The app name is mandatory"
+            )
+        self.__broker = Broker(environment_id, app_name)
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()
         

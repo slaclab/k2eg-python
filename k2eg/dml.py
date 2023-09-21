@@ -8,7 +8,7 @@ from confluent_kafka import KafkaError
 from typing import Callable
 from k2eg.broker import Broker
 
-_protocol_regex = r"^(pva?|ca)://([A-Za-z0-9_:]+)(?:\.([A-Za-z0-9_\.]+))?$"
+_protocol_regex = r"^(pva?|ca)://((?:[A-Za-z0-9-_:]+(?:\.[A-Za-z0-9-_]+)*))$"
 
 def _filter_pv_uri(uri: str):
     match = re.match(_protocol_regex, uri)

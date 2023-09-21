@@ -4,6 +4,7 @@ import os
 import logging
 import threading
 import configparser
+import time
 import uuid
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END
 from confluent_kafka import KafkaError, KafkaException
@@ -64,7 +65,8 @@ class Broker:
         environment_id: str,
         app_name:str,
         group_name: str = 'k2eg-group-{}'.format(str(uuid.uuid4())),
-        app_instance_unique_id:str = "1"):
+        app_instance_unique_id:str = "1",
+        startup_tout: int = 10):
         """
         Parameters
         ----------
@@ -105,10 +107,9 @@ class Broker:
                 self.__enviroment_set, 'kafka_broker_url'
                 ), 
             'group.id': group_name,
-            'group.instance.id': group_name+'_'+app_instance_unique_id,
+            'group.instance.id': app_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
             'enable.auto.commit': 'false',
-            'allow.auto.create.topics': 'true',
             'topic.metadata.refresh.interval.ms': '60000'
         }
         if enable_kafka_debug is True:
@@ -134,8 +135,8 @@ class Broker:
         self.__reply_topic_joined = False
         self.__topic_checker = TopicChecker()
         # wait for consumer join the partition
-        self.__consumer.poll(0.1)
-        self.__reply_partition_assigned.wait()
+        self.wait_for_reply_available(startup_tout)
+        
 
     def __manage_old_state(self):
         self.__consumer.poll(1.0)
@@ -168,12 +169,16 @@ class Broker:
     def get_reply_topic(self):
         return self.__reply_topic
 
-    def wait_for_reply_available(self):
+    def wait_for_reply_available(self, timeout):
         """ Wait untile the consumer has joined the reply topic
         """
-        self.__reply_partition_assigned.wait()
-        if self.__reply_topic_joined is False:
-                raise TopicUnknown(f"{self.__reply_partition} unknown")
+        start_time = time.time()
+        end_time = start_time + timeout
+        while self.__reply_partition_assigned.wait(1) is False:
+            if time.time() > end_time:
+                raise TimeoutError("Function timed out")
+            logging.debug("waiting for reply topic to join")
+            self.__consumer.poll(1)
 
     def reset_reply_topic_to_ts(self, timestamp):
         self.reset_topic_offset_in_time(self.__reply_topic, timestamp)
@@ -198,7 +203,6 @@ class Broker:
         except KafkaException as e:
             logging.error(e)
        
-    
     def get_next_message(self, timeout = 0.1):
         message = self.__consumer.poll(timeout)
         # give a chanche to update metadata ofr pending topics

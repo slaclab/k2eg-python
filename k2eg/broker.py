@@ -105,10 +105,9 @@ class Broker:
                 self.__enviroment_set, 'kafka_broker_url'
                 ), 
             'group.id': group_name,
-            'group.instance.id': group_name+'_'+app_instance_unique_id,
+            'group.instance.id': app_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
             'enable.auto.commit': 'false',
-            'allow.auto.create.topics': 'true',
             'topic.metadata.refresh.interval.ms': '60000'
         }
         if enable_kafka_debug is True:
@@ -134,8 +133,10 @@ class Broker:
         self.__reply_topic_joined = False
         self.__topic_checker = TopicChecker()
         # wait for consumer join the partition
-        self.__consumer.poll(0.1)
-        self.__reply_partition_assigned.wait()
+        while self.__reply_partition_assigned.wait(1) is False:
+            logging.debug("waiting for reply topic to join")
+            self.__consumer.poll(1)
+        
 
     def __manage_old_state(self):
         self.__consumer.poll(1.0)

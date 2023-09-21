@@ -175,7 +175,7 @@ class Broker:
         start_time = time.time()
         end_time = start_time + timeout
         while self.__reply_partition_assigned.wait(1) is False:
-            if time.time() < end_time:
+            if time.time() > end_time:
                 raise TimeoutError("Function timed out")
             logging.debug("waiting for reply topic to join")
             self.__consumer.poll(1)

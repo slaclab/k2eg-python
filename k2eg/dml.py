@@ -40,6 +40,8 @@ class dml:
             raise ValueError(
                 "The app name is mandatory"
             )
+        self.__broker = None
+        self.__thread = None
         self.__broker = Broker(environment_id, app_name)
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()
@@ -364,5 +366,7 @@ class dml:
 
     def close(self):
         self.__consume_data = False
-        self.__broker.close()
-        self.__thread.join()
+        if self.__broker is not None:
+            self.__broker.close()
+        if self.__thread is not None:
+            self.__thread.join()

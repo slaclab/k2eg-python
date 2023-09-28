@@ -1,14 +1,11 @@
-
-import json
 import logging
 import sys
 import os
 import time
 
-# Add the parent directory to the sys.path
-parent_dir = os.path.dirname(os.path.abspath(__file__))  # Get the current script's directory
-parent_dir = os.path.dirname(parent_dir)  # Get the parent directory
-sys.path.insert(0, parent_dir)  # Add the parent directory to the sys.path
+parent_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(parent_dir)
+sys.path.insert(0, parent_dir)
 
 import k2eg
 
@@ -23,7 +20,7 @@ def monitor_handler(pv_name, new_value):
 
 def example_monitor(k:k2eg):
     logging.info('Monitor PV for 30 seconds')
-    r=k.monitor('ca://VGXX:L3B:1602:PLOG', monitor_handler)
+    k.monitor('ca://VGXX:L3B:1602:PLOG', monitor_handler)
     logging.info('Stop Monitor PV')
     start_time = time.time()
     end_time = start_time + 30

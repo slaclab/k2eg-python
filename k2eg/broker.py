@@ -8,7 +8,6 @@ import time
 import uuid
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END
 from confluent_kafka import KafkaError, KafkaException
-from confluent_kafka.admin import AdminClient
 
 class TopicUnknown(Exception):
     """Exception raised when the timeout is expired on operation"""

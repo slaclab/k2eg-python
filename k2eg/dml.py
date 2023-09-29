@@ -40,6 +40,8 @@ class dml:
             raise ValueError(
                 "The app name is mandatory"
             )
+        self.__broker = None
+        self.__thread = None
         self.__broker = Broker(environment_id, app_name)
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()
@@ -136,22 +138,19 @@ class dml:
                 was_a_reply = False
                 #msg_id could be a reply id or pv name
                 msg_id, decoded_message = self.__decode_message(message)
-                logging.debug(f"received with offset [{msg_id}|{message.offset()}]")
                 if msg_id is None or decoded_message is None:
                     continue
                 with self.reply_wait_condition:
                     was_a_reply = msg_id in self.reply_message
                     if was_a_reply is True:
+                        logging.debug(f"received reply on topic {message.topic()}")
                         self.reply_message[msg_id] = decoded_message
                         self.reply_wait_condition.notifyAll()
                     elif msg_id in self.__monitor_pv_handler:
+                        logging.debug(f"received event on topic {message.topic()}")
                         self.__monitor_pv_handler[msg_id](
                             msg_id, decoded_message[msg_id]
                             )
-                        logging.debug(
-                            'read message sent '+
-                            f'to {self.__monitor_pv_handler[msg_id]} handler'
-                        )
                 self.__broker.commit_current_fetched_message()
 
     def parse_pv_url(self, pv_url):
@@ -367,5 +366,7 @@ class dml:
 
     def close(self):
         self.__consume_data = False
-        self.__broker.close()
-        self.__thread.join()
+        if self.__broker is not None:
+            self.__broker.close()
+        if self.__thread is not None:
+            self.__thread.join()

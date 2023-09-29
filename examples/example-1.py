@@ -6,7 +6,7 @@ import time
 parent_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(parent_dir)
 sys.path.insert(0, parent_dir)
-
+# noqa: E402
 import k2eg
 
 def example_get(k:k2eg):
@@ -20,13 +20,15 @@ def monitor_handler(pv_name, new_value):
 
 def example_monitor(k:k2eg):
     logging.info('Monitor PV for 30 seconds')
-    k.monitor('ca://VGXX:L3B:1602:PLOG', monitor_handler)
-    logging.info('Stop Monitor PV')
-    start_time = time.time()
-    end_time = start_time + 30
-    while time.time() < end_time:
-        time.sleep(1)
-    k.stop_monitor('VGXX:L3B:1602:PLOG')
+    try:
+        k.monitor('ca://VGXX:L3B:1602:PLOG', monitor_handler)
+        logging.info('Stop Monitor PV')
+        start_time = time.time()
+        end_time = start_time + 30
+        while time.time() < end_time:
+            time.sleep(1)
+    finally:
+        k.stop_monitor('VGXX:L3B:1602:PLOG')
     
 
 if __name__ == "__main__":
@@ -45,10 +47,10 @@ if __name__ == "__main__":
         print("Operation timeout")
         pass
     except ValueError as e:
-        print("Bad value {}".format(e))
+        print(f"Bad value {e}")
         pass
     except  TimeoutError as e:
-        print("Client timeout")
+        print(f"Client timeout: {e}")
         pass
 
     finally:

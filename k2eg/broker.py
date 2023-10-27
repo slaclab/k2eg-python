@@ -81,7 +81,7 @@ class Broker:
         # Get the current directory of the script
         current_configuration_dir = os.getenv(
             'K2EG_PYTHON_CONFIGURATION_PATH_FOLDER', 
-            os.path.dirname(os.path.realpath(__file__))
+            os.path.dirname(os.path.realpath(__file__))+"/environment"
         ) 
         enable_kafka_debug = os.getenv(
             'K2EG_PYTHON_ENABLE_KAFKA_DEBUG_LOG', 
@@ -96,7 +96,7 @@ class Broker:
         self.__config.read(
             os.path.join(
             current_configuration_dir, 
-            f'environment/{environment_id}.ini')
+            f'{environment_id}.ini')
             )
 
         self.__check_config(app_name)

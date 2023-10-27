@@ -319,8 +319,9 @@ class dml:
                     self.__broker.add_topic(self.__normalize_pv_name(pv_name))
                     return result
 
-    def stop_monitor(self, pv_name: str, timeout: float = None):
-        """ Stop a new monitor for pv if it is not already activated
+    def monitor_no_consume(self, pv_url: str, timeout: float = None):  # noqa: E501
+        """ Add a new monitor for pv if it is not already activated
+        without consuming it
         Parameters
                 ----------
                 pv_name : str
@@ -333,30 +334,26 @@ class dml:
                 False: otherwhise
         """
         fetched = False
-        self.__check_pv_name(pv_name)
+        protocol, pv_name = self.parse_pv_url(pv_url)
+        if protocol.lower() not in ("pva", "ca"):
+            raise ValueError("The portocol need to be one of 'pva' or 'ca'")
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
-            if pv_name not in self.__monitor_pv_handler:
-                logging.info(
-                    f"Monitor already stopped for pv {pv_name}")
-                return
-            # init reply slot
-            self.reply_message[new_reply_id] = None
-            del self.__monitor_pv_handler[pv_name]
-            self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
             # send message to k2eg from activate (only for last topics) 
             # monitor(just in case it is not already activated)
-            self.__broker.send_stop_monitor_command(
+            self.__broker.send_start_monitor_command(
                 pv_name,
+                protocol,
                 self.__normalize_pv_name(pv_name),
-                new_reply_id
+                new_reply_id,
             )
+
             while(not fetched):
                 op_res, result =  self.__wait_for_reply(new_reply_id, timeout)
                 if op_res == -2:
                     # raise timeout exception
                     raise OperationTimeout(
-                            f"Timeout during stop monitor operation for {pv_name}"
+                            f"Timeout during start monitor operation for {pv_name}"
                             )
                 elif op_res == -1:
                     continue

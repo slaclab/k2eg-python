@@ -5,6 +5,7 @@ import logging
 import threading
 import configparser
 import time
+from tkinter import NO
 import uuid
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END
 from confluent_kafka import KafkaError, KafkaException
@@ -63,7 +64,7 @@ class Broker:
         self, 
         environment_id: str,
         app_name:str,
-        group_name: str = 'k2eg-group-{}'.format(str(uuid.uuid4())),
+        group_name: str = None,
         app_instance_unique_id:str = "1",
         startup_tout: int = 10):
         """
@@ -76,6 +77,8 @@ class Broker:
             Is the group name to distribuite the data from different same 
             client instance
         """
+        if group_name is None:
+            group_name = app_name
         enviroment_set: str = 'DEFAULT'
         self.__initialized=False
         # Get the current directory of the script

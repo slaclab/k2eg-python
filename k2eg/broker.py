@@ -5,8 +5,6 @@ import logging
 import threading
 import configparser
 import time
-from tkinter import NO
-import uuid
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END
 from confluent_kafka import KafkaError, KafkaException
 

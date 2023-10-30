@@ -34,7 +34,7 @@ services:
         - -c
         - |
           sleep 10
-          k2eg --log-level=debug --cmd-input-topic=cmd-in-topic --sub-server-address=kafka:9092  --sub-group-id=eed-k2eg --pub-server-address=kafka:9092 --metric-enable=true
+          k2eg --log-level=debug --cmd-input-topic=cmd-in-topic --sub-server-address=kafka:9092  --sub-group-id=eed-k2eg --pub-server-address=kafka:9092 --metric-enable=true  --scheduler-check-delay-seconds=60 --scheduler-thread-number=1 --monitor-worker-cron-schedule="*/30 * * * * *" --nc-monitor-expiration-timeout=3600 --nc-purge-queue-on-exp-timeout=true
     depends_on: 
       - kafka
   

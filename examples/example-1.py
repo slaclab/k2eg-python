@@ -17,15 +17,12 @@ def monitor_handler(pv_name, new_value):
 
 
 def example_monitor(k:k2eg):
-    try:
-        k.monitor('ca://VGXX:L3B:1602:PLOG', monitor_handler)
-        logging.info('Stop Monitor PV')
-        start_time = time.time()
-        end_time = start_time + 30
-        while time.time() < end_time:
-            time.sleep(1)
-    finally:
-        k.stop_monitor('VGXX:L3B:1602:PLOG')
+    k.monitor('ca://VGXX:L3B:1602:PLOG', monitor_handler)
+    logging.info('Stop Monitor PV')
+    start_time = time.time()
+    end_time = start_time + 30
+    while time.time() < end_time:
+        time.sleep(1)
     
 
 if __name__ == "__main__":

@@ -207,8 +207,7 @@ class dml:
             self.reply_message[new_reply_id] = None
             # send message to k2eg
             self.__broker.send_get_command(
-                pv_name,
-                protocol.lower(),
+                pv_url,
                 new_reply_id
             )
             while(not fetched):
@@ -252,9 +251,8 @@ class dml:
             self.reply_message[new_reply_id] = None
             # send message to k2eg
             self.__broker.send_put_command(
-                pv_name,
+                pv_url,
                 value,
-                protocol.lower(),
                 new_reply_id
             )
             while(not fetched):
@@ -298,8 +296,7 @@ class dml:
             # send message to k2eg from activate (only for last topics) 
             # monitor(just in case it is not already activated)
             self.__broker.send_start_monitor_command(
-                pv_name,
-                protocol,
+                pv_url,
                 self.__normalize_pv_name(pv_name),
                 new_reply_id,
             )
@@ -318,13 +315,12 @@ class dml:
                     self.__monitor_pv_handler[pv_name] = handler
                     self.__broker.add_topic(self.__normalize_pv_name(pv_name))
                     return result
-
-    def monitor_no_consume(self, pv_url: str, timeout: float = None):  # noqa: E501
+        
+    def monitor_many(self, pv_uri_list: list[str], handler: Callable[[str, dict], None], timeout: float = None):  # noqa: E501
         """ Add a new monitor for pv if it is not already activated
-        without consuming it
         Parameters
                 ----------
-                pv_name : str
+                pv_uri_list : list[str]
                     The name of the PV to monitor
                 handler: function
                     The handler to be called when a message is received
@@ -334,17 +330,29 @@ class dml:
                 False: otherwhise
         """
         fetched = False
-        protocol, pv_name = self.parse_pv_url(pv_url)
-        if protocol.lower() not in ("pva", "ca"):
-            raise ValueError("The portocol need to be one of 'pva' or 'ca'")
+        for pv_uri in pv_uri_list:
+            protocol, pv_name = self.parse_pv_url(pv_uri)
+            if protocol.lower() not in ("pva", "ca"):
+                raise ValueError("The protocol need to be one of 'pva'  'ca'")
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
+            filtered_list_pv_uri = []
+            # init reply slot
+            for pv_uri in pv_uri_list:
+                protocol, pv_name = self.parse_pv_url(pv_uri)
+                self.reply_message[new_reply_id] = None
+                if pv_name in self.__monitor_pv_handler:
+                    logging.info(
+                        f"Monitor already activate for pv {pv_name}")
+                    continue
+                filtered_list_pv_uri.append(pv_uri)
+            
+            if len(filtered_list_pv_uri)==0:
+                return
             # send message to k2eg from activate (only for last topics) 
             # monitor(just in case it is not already activated)
-            self.__broker.send_start_monitor_command(
-                pv_name,
-                protocol,
-                self.__normalize_pv_name(pv_name),
+            self.__broker.send_start_monitor_command_many(
+                filtered_list_pv_uri,
                 new_reply_id,
             )
 
@@ -358,9 +366,13 @@ class dml:
                 elif op_res == -1:
                     continue
                 else:
+                    # all is gone ok i can register the handler and subscribe
+                    for pv_uri in filtered_list_pv_uri:
+                        protocol, pv_name = self.parse_pv_url(pv_uri)
+                        self.__monitor_pv_handler[pv_name] = handler
+                        self.__broker.add_topic(self.__normalize_pv_name(pv_name))
                     return result
-        
-
+                
     def close(self):
         self.__consume_data = False
         if self.__broker is not None:

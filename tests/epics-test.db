@@ -38,6 +38,26 @@ record(calc, "channel:ramp:ramp")
     field(HSV, "MAJOR")
 }
 
+record(calc, "channel:ramp:rampa")
+{
+    field(SCAN, "1 second")
+    field(INPA, "channel:ramp:rampb")
+    field(INPB, "channel:ramp:limit")
+    field(CALC, "A<B ? A+1 : 0")
+    field(HIGH, "90")
+    field(HSV, "MAJOR")
+}
+
+record(calc, "channel:ramp:rampb")
+{
+    field(SCAN, "1 second")
+    field(INPA, "channel:ramp:rampb")
+    field(INPB, "channel:ramp:limit")
+    field(CALC, "A<B ? A+1 : 0")
+    field(HIGH, "90")
+    field(HSV, "MAJOR")
+}
+
 record (waveform,"channel:waveform")
 {
     field(DESC, "Setpoints")

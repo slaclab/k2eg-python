@@ -67,6 +67,7 @@ def test_k2eg_get_bad_pv():
                     k.get('pva://bad:pv:name')
 
 def test_k2eg_monitor():
+    retry = 0
     received_message = None
 
     def monitor_handler(pv_name, new_value):
@@ -74,23 +75,31 @@ def test_k2eg_monitor():
         received_message = new_value
 
     k.monitor('pva://channel:ramp:ramp', monitor_handler)
-    while received_message is None:
+    while received_message is None or retry > 5:
+        retry = retry+1
         time.sleep(2)
     
     assert received_message is not None, "value should not be None"
 
 def test_k2eg_monitor_many():
-    received_message = None
-
+    retry = 0
+    received_message_a = False
+    received_message_b = False
     def monitor_handler(pv_name, new_value):
-        nonlocal received_message
-        received_message = new_value
+        nonlocal received_message_a
+        nonlocal received_message_b
+        if pv_name=='channel:ramp:rampa':
+            received_message_a = True
+        if pv_name=='channel:ramp:rampb':
+            received_message_b = True
 
-    k.monitor_many(['pva://channel:ramp:ramp'], monitor_handler)
-    while received_message is None:
+    k.monitor_many(['pva://channel:ramp:rampa', 'pva://channel:ramp:rampb'], monitor_handler)
+    while received_message_a is False or received_message_b is False or retry > 5:
+        retry = retry+1
         time.sleep(2)
     
-    assert received_message is not None, "value should not be None"
+    assert received_message_a is not False, "value should not be None"
+    assert received_message_b is not False, "value should not be None"
 
 def test_put():
     k.put("pva://variable:a", 0)

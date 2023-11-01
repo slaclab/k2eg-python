@@ -346,6 +346,9 @@ class dml:
                         f"Monitor already activate for pv {pv_name}")
                     continue
                 filtered_list_pv_uri.append(pv_uri)
+            
+            if len(filtered_list_pv_uri)==0:
+                return
             # send message to k2eg from activate (only for last topics) 
             # monitor(just in case it is not already activated)
             self.__broker.send_start_monitor_command_many(

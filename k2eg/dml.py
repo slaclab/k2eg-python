@@ -318,47 +318,6 @@ class dml:
                     self.__monitor_pv_handler[pv_name] = handler
                     self.__broker.add_topic(self.__normalize_pv_name(pv_name))
                     return result
-
-    def monitor_no_consume(self, pv_url: str, timeout: float = None):  # noqa: E501
-        """ Add a new monitor for pv if it is not already activated
-        without consuming it
-        Parameters
-                ----------
-                pv_name : str
-                    The name of the PV to monitor
-                handler: function
-                    The handler to be called when a message is received
-        Rais:
-                ----------
-                True: the monitor has been activated
-                False: otherwhise
-        """
-        fetched = False
-        protocol, pv_name = self.parse_pv_url(pv_url)
-        if protocol.lower() not in ("pva", "ca"):
-            raise ValueError("The portocol need to be one of 'pva' or 'ca'")
-        new_reply_id = str(uuid.uuid1())
-        with self.reply_wait_condition:
-            # send message to k2eg from activate (only for last topics) 
-            # monitor(just in case it is not already activated)
-            self.__broker.send_start_monitor_command(
-                pv_name,
-                protocol,
-                self.__normalize_pv_name(pv_name),
-                new_reply_id,
-            )
-
-            while(not fetched):
-                op_res, result =  self.__wait_for_reply(new_reply_id, timeout)
-                if op_res == -2:
-                    # raise timeout exception
-                    raise OperationTimeout(
-                            f"Timeout during start monitor operation for {pv_name}"
-                            )
-                elif op_res == -1:
-                    continue
-                else:
-                    return result
         
 
     def close(self):

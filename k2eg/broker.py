@@ -247,49 +247,44 @@ class Broker:
         )
         self.__producer.flush()
 
-    def send_get_command(self, pv_uri, protocol, reply_id):
+    def send_get_command(self, pv_uri, reply_id):
         get_json_msg = {
             "command": "get",
             "serialization": "msgpack",
-            # "protocol": protocol.lower(),
             "pv_name": pv_uri,
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id
         }
         self.send_command(json.dumps(get_json_msg))
 
-    def send_start_monitor_command(self, pv_uri, protocol, pv_reply_topic, reply_id):
+    def send_start_monitor_command(self, pv_uri, pv_reply_topic, reply_id):
         # send command
         monitor_json_msg = {
             "command": "monitor",
             "serialization": "msgpack",
-            # "protocol": protocol.lower(),
             "pv_name": pv_uri,
+            "activate": True,
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id,
-            "activate": True,
             "monitor_dest_topic": pv_reply_topic
         }
         self.send_command(json.dumps(monitor_json_msg))    
     
-    def send_start_monitor_command_many(self, pv_uri_list, protocol, pv_reply_topic, reply_id):
+    def send_start_monitor_command_many(self, pv_uri_list, reply_id):
         # send command
         monitor_json_msg = {
-            "command": "monitor",
+            "command": "multi-monitor",
             "serialization": "msgpack",
-            # "protocol": protocol.lower(),
-            "pv_name": pv_uri_list,
-            "reply_topic": self.__reply_topic,
-            "reply_id": reply_id,
             "activate": True,
-            "monitor_dest_topic": pv_reply_topic
+            "pv_name_list": pv_uri_list,
+            "reply_topic": self.__reply_topic,
+            "reply_id": reply_id
         }
         self.send_command(json.dumps(monitor_json_msg))  
 
-    def send_put_command(self, pv_uri: str, value: any, protocol:str, reply_id: str):
+    def send_put_command(self, pv_uri: str, value: any, reply_id: str):
         put_value_json_msg = {
             "command": "put",
-            "protocol": protocol,
             "pv_name": pv_uri,
             "value": str(value),
             "reply_topic": self.__reply_topic,

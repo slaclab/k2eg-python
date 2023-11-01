@@ -79,6 +79,19 @@ def test_k2eg_monitor():
     
     assert received_message is not None, "value should not be None"
 
+def test_k2eg_monitor_many():
+    received_message = None
+
+    def monitor_handler(pv_name, new_value):
+        nonlocal received_message
+        received_message = new_value
+
+    k.monitor_many(['pva://channel:ramp:ramp'], monitor_handler)
+    while received_message is None:
+        time.sleep(2)
+    
+    assert received_message is not None, "value should not be None"
+
 def test_put():
     k.put("pva://variable:a", 0)
     k.put("pva://variable:b", 0)

@@ -207,8 +207,7 @@ class dml:
             self.reply_message[new_reply_id] = None
             # send message to k2eg
             self.__broker.send_get_command(
-                pv_name,
-                protocol.lower(),
+                pv_url,
                 new_reply_id
             )
             while(not fetched):
@@ -252,9 +251,8 @@ class dml:
             self.reply_message[new_reply_id] = None
             # send message to k2eg
             self.__broker.send_put_command(
-                pv_name,
+                pv_url,
                 value,
-                protocol.lower(),
                 new_reply_id
             )
             while(not fetched):
@@ -298,9 +296,8 @@ class dml:
             # send message to k2eg from activate (only for last topics) 
             # monitor(just in case it is not already activated)
             self.__broker.send_start_monitor_command(
-                pv_name,
-                protocol,
-                self.__normalize_pv_name(pv_url),
+                pv_url,
+                self.__normalize_pv_name(pv_name),
                 new_reply_id,
             )
 
@@ -351,10 +348,8 @@ class dml:
                 filtered_list_pv_uri.append(pv_uri)
             # send message to k2eg from activate (only for last topics) 
             # monitor(just in case it is not already activated)
-            self.__broker.send_start_monitor_command(
+            self.__broker.send_start_monitor_command_many(
                 filtered_list_pv_uri,
-                protocol,
-                self.__normalize_pv_name(pv_name),
                 new_reply_id,
             )
 
@@ -370,6 +365,7 @@ class dml:
                 else:
                     # all is gone ok i can register the handler and subscribe
                     for pv_uri in filtered_list_pv_uri:
+                        protocol, pv_name = self.parse_pv_url(pv_uri)
                         self.__monitor_pv_handler[pv_name] = handler
                         self.__broker.add_topic(self.__normalize_pv_name(pv_name))
                     return result

@@ -319,11 +319,11 @@ class dml:
                     self.__broker.add_topic(self.__normalize_pv_name(pv_name))
                     return result
         
-def monitor_many(self, pv_url: list[str], handler: Callable[[str, dict], None], timeout: float = None):  # noqa: E501
+    def monitor_many(self, pv_uri_list: list[str], handler: Callable[[str, dict], None], timeout: float = None):  # noqa: E501
         """ Add a new monitor for pv if it is not already activated
         Parameters
                 ----------
-                pv_name : str
+                pv_uri_list : list[str]
                     The name of the PV to monitor
                 handler: function
                     The handler to be called when a message is received
@@ -333,21 +333,26 @@ def monitor_many(self, pv_url: list[str], handler: Callable[[str, dict], None], 
                 False: otherwhise
         """
         fetched = False
-        protocol, pv_name = self.parse_pv_url(pv_url)
-        if protocol.lower() not in ("pva", "ca"):
-            raise ValueError("The portocol need to be one of 'pva'  'ca'")
+        for pv_uri in pv_uri_list:
+            protocol, pv_name = self.parse_pv_url(pv_uri)
+            if protocol.lower() not in ("pva", "ca"):
+                raise ValueError("The protocol need to be one of 'pva'  'ca'")
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
+            filtered_list_pv_uri = []
             # init reply slot
-            self.reply_message[new_reply_id] = None
-            if pv_name in self.__monitor_pv_handler:
-                logging.info(
-                    f"Monitor already activate for pv {pv_name}")
-                return
+            for pv_uri in pv_uri_list:
+                protocol, pv_name = self.parse_pv_url(pv_uri)
+                self.reply_message[new_reply_id] = None
+                if pv_name in self.__monitor_pv_handler:
+                    logging.info(
+                        f"Monitor already activate for pv {pv_name}")
+                    continue
+                filtered_list_pv_uri.append(pv_uri)
             # send message to k2eg from activate (only for last topics) 
             # monitor(just in case it is not already activated)
             self.__broker.send_start_monitor_command(
-                pv_name,
+                filtered_list_pv_uri,
                 protocol,
                 self.__normalize_pv_name(pv_name),
                 new_reply_id,
@@ -364,8 +369,9 @@ def monitor_many(self, pv_url: list[str], handler: Callable[[str, dict], None], 
                     continue
                 else:
                     # all is gone ok i can register the handler and subscribe
-                    self.__monitor_pv_handler[pv_name] = handler
-                    self.__broker.add_topic(self.__normalize_pv_name(pv_name))
+                    for pv_uri in filtered_list_pv_uri:
+                        self.__monitor_pv_handler[pv_name] = handler
+                        self.__broker.add_topic(self.__normalize_pv_name(pv_name))
                     return result
                 
     def close(self):

@@ -272,6 +272,20 @@ class Broker:
         }
         self.send_command(json.dumps(monitor_json_msg))    
     
+    def send_start_monitor_command_many(self, pv_uri_list, protocol, pv_reply_topic, reply_id):
+        # send command
+        monitor_json_msg = {
+            "command": "monitor",
+            "serialization": "msgpack",
+            # "protocol": protocol.lower(),
+            "pv_name": pv_uri_list,
+            "reply_topic": self.__reply_topic,
+            "reply_id": reply_id,
+            "activate": True,
+            "monitor_dest_topic": pv_reply_topic
+        }
+        self.send_command(json.dumps(monitor_json_msg))  
+
     def send_put_command(self, pv_uri: str, value: any, protocol:str, reply_id: str):
         put_value_json_msg = {
             "command": "put",

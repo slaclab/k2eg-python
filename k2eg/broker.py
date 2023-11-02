@@ -5,7 +5,7 @@ import logging
 import threading
 import configparser
 import time
-from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END
+from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END, OFFSET_BEGINNING
 from confluent_kafka import KafkaError, KafkaException
 
 class TopicUnknown(Exception):
@@ -181,7 +181,7 @@ class Broker:
         self.reset_topic_offset_in_time(self.__reply_topic, timestamp)
 
     def reset_topic_offset_in_time(self, topic, timestamp):
-        """ Set the topic offset to the end of messages
+        """ Set the topic offset to the specific timestamp
         """
         partitions = self.__consumer.list_topics(topic).topics[topic].partitions.keys()
 
@@ -195,8 +195,10 @@ class Broker:
             offsets_for_times = self.__consumer.offsets_for_times(topic_partitions)
             # Set the starting offset of the consumer to the returned offsets
             for tp in offsets_for_times:
-                if tp.offset != -1:  # If an offset was found
+                if tp.offset != -1 or tp.offset != -1001:  # If an offset was found
                     self.__consumer.seek(tp)
+                else:
+                    tp.offset = OFFSET_BEGINNING
         except KafkaException as e:
             logging.error(e)
        

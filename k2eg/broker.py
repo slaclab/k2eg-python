@@ -150,7 +150,7 @@ class Broker:
                 self.__reply_topic_joined = True
                 self.__reply_partition_assigned.set()
             #low, high = consumer.get_watermark_offsets(p)
-            if p.offset==-1:
+            if p.offset==-1 or p.offset==-1001:
                 logging.debug(f'set new offset for {p.topic}')
                 p.offset = OFFSET_END
         consumer.assign(partitions)

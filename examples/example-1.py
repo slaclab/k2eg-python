@@ -33,8 +33,8 @@ if __name__ == "__main__":
             level=logging.DEBUG,
         )
         k = k2eg.dml('lcls', 'app-test')
-        logging.info('Get the PV')
-        example_get(k)
+        #logging.info('Get the PV')
+        #example_get(k)
         logging.info('Monitor PV for 30 seconds')
         example_monitor(k)
     except k2eg.OperationError as e:

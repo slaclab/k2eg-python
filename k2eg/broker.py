@@ -5,7 +5,7 @@ import logging
 import threading
 import configparser
 import time
-from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END
+from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END, OFFSET_BEGINNING
 from confluent_kafka import KafkaError, KafkaException
 
 class TopicUnknown(Exception):
@@ -35,7 +35,7 @@ class TopicChecker:
         if to_check:
             for t in self.__topics_to_check:
                 found = self.__check_for_topic(t, consumer)
-                logging.debug(f"Check for topic {t} => {found}")
+                logging.debug(f"Check for topic {t} => found:{found}")
                 if found:
                     logging.debug(f"Remove topic {t} from checker")
                     self.__topics_to_check.remove(t)
@@ -150,7 +150,7 @@ class Broker:
                 self.__reply_topic_joined = True
                 self.__reply_partition_assigned.set()
             #low, high = consumer.get_watermark_offsets(p)
-            if p.offset==-1:
+            if p.offset==-1 or p.offset==-1001:
                 logging.debug(f'set new offset for {p.topic}')
                 p.offset = OFFSET_END
         consumer.assign(partitions)
@@ -181,7 +181,7 @@ class Broker:
         self.reset_topic_offset_in_time(self.__reply_topic, timestamp)
 
     def reset_topic_offset_in_time(self, topic, timestamp):
-        """ Set the topic offset to the end of messages
+        """ Set the topic offset to the specific timestamp
         """
         partitions = self.__consumer.list_topics(topic).topics[topic].partitions.keys()
 
@@ -195,8 +195,10 @@ class Broker:
             offsets_for_times = self.__consumer.offsets_for_times(topic_partitions)
             # Set the starting offset of the consumer to the returned offsets
             for tp in offsets_for_times:
-                if tp.offset != -1:  # If an offset was found
+                if tp.offset != -1 or tp.offset != -1001:  # If an offset was found
                     self.__consumer.seek(tp)
+                else:
+                    tp.offset = OFFSET_BEGINNING
         except KafkaException as e:
             logging.error(e)
        
@@ -208,6 +210,7 @@ class Broker:
             return None    
         if message.error():
             if message.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
+                logging.info(f"Topic {message.topic()} not found, add it tochecker")
                 self.__topic_checker.add_topic(message.topic())
         return message
     
@@ -219,14 +222,13 @@ class Broker:
             raise ValueError(
                 f'The topic name {self.__reply_topic} cannot be used'
                 )
-        logging.debug(f'Start consuming from topic: {new_topic}')
         if new_topic not in self.__subribed_topics:
+            logging.debug(f'Start consuming from topic: {new_topic}')
             self.__subribed_topics.append(new_topic)
             self.__consumer.subscribe(
                 self.__subribed_topics, on_assign=self.__on_assign)
         else:
-            self.__consumer.subscribe(
-                self.__subribed_topics, on_assign=self.__on_assign)
+            logging.debug(f'Topic {new_topic} is already consuming')
 
     def remove_topic(self, topic_to_remove):
         if topic_to_remove == self.__reply_topic:
@@ -234,10 +236,13 @@ class Broker:
                 f'The topic name {self.__reply_topic} cannot be used'
                 )
         if topic_to_remove in self.__subribed_topics:
+            logging.debug(f'Topic {topic_to_remove} will be removed')
             self.__subribed_topics.remove(topic_to_remove)
             self.__consumer.subscribe(
                 self.__subribed_topics, on_assign=self.__on_assign
                 )
+        else:
+            logging.debug(f'Topic {topic_to_remove} is not present')
   
     def send_command(self, message: str):
         broker_cmd_in_topic = self.__config.get(self.__enviroment_set, 'k2eg_cmd_topic')

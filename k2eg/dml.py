@@ -133,7 +133,7 @@ class dml:
                         f"end at offset {message.offset()}"
                     )
                 else:
-                    logging.error(message.error())
+                    continue
             else:
                 was_a_reply = False
                 #msg_id could be a reply id or pv name
@@ -372,7 +372,19 @@ class dml:
                         self.__monitor_pv_handler[pv_name] = handler
                         self.__broker.add_topic(self.__normalize_pv_name(pv_name))
                     return result
-                
+    
+    def stop_monitor(self, pv_name: str):  # noqa: E501
+        """ Remove movitor for a specific pv
+        Parameters
+                ----------
+                pv_name : str
+                    The name of the PV to monitor
+        """
+        with self.reply_wait_condition:
+            # all is gone ok i can register the handler and subscribe
+            del self.__monitor_pv_handler[pv_name]
+            self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
+
     def close(self):
         self.__consume_data = False
         if self.__broker is not None:

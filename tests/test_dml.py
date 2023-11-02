@@ -73,12 +73,13 @@ def test_k2eg_monitor():
     def monitor_handler(pv_name, new_value):
         nonlocal received_message
         received_message = new_value
-
-    k.monitor('pva://channel:ramp:ramp', monitor_handler)
-    while received_message is None and retry < 5:
-        retry = retry+1
-        time.sleep(2)
-    
+    try:
+        k.monitor('pva://channel:ramp:ramp', monitor_handler)
+        while received_message is None and retry < 5:
+            retry = retry+1
+            time.sleep(2)
+    finally:
+        k.stop_monitor("channel:ramp:ramp")
     assert received_message is not None, "value should not be None"
 
 def test_k2eg_monitor_wrong():
@@ -88,13 +89,15 @@ def test_k2eg_monitor_wrong():
     def monitor_handler(pv_name, new_value):
         nonlocal received_message
         received_message = new_value
-
-    k.monitor('pva://channel:ramp:rampc', monitor_handler)
-    while received_message is None and retry < 5:
-        retry = retry+1
-        time.sleep(2)
-    
+    try:
+        k.monitor('pva://channel:ramp:rampc', monitor_handler)
+        while received_message is None and retry < 5:
+            retry = retry+1
+            time.sleep(2)
+    finally:
+        k.stop_monitor("channel:ramp:rampc")
     assert received_message is  None, "value be None"
+
 
 def test_k2eg_monitor_many():
     retry = 0
@@ -107,12 +110,14 @@ def test_k2eg_monitor_many():
             received_message_a = True
         if pv_name=='channel:ramp:rampb':
             received_message_b = True
-
-    k.monitor_many(['pva://channel:ramp:rampa', 'pva://channel:ramp:rampb'], monitor_handler)
-    while (received_message_a is False or received_message_b is False) and retry < 5:
-        retry = retry+1
-        time.sleep(2)
-    
+    try:
+        k.monitor_many(['pva://channel:ramp:rampa', 'pva://channel:ramp:rampb'], monitor_handler)
+        while (received_message_a is False or received_message_b is False) and retry < 5:
+            retry = retry+1
+            time.sleep(2)
+    finally:
+        k.stop_monitor("channel:ramp:rampa")
+        k.stop_monitor("channel:ramp:rampb")
     assert received_message_a is not False, "value should not be None"
     assert received_message_b is not False, "value should not be None"
 

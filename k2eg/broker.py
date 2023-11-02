@@ -210,6 +210,7 @@ class Broker:
             return None    
         if message.error():
             if message.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
+                logging.info(f"Topic {message.topic()} not found, add it tochecker")
                 self.__topic_checker.add_topic(message.topic())
         return message
     

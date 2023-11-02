@@ -133,7 +133,7 @@ class dml:
                         f"end at offset {message.offset()}"
                     )
                 else:
-                    logging.error(message.error())
+                    continue
             else:
                 was_a_reply = False
                 #msg_id could be a reply id or pv name

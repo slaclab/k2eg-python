@@ -35,7 +35,7 @@ class TopicChecker:
         if to_check:
             for t in self.__topics_to_check:
                 found = self.__check_for_topic(t, consumer)
-                logging.debug(f"Check for topic {t} => {found}")
+                logging.debug(f"Check for topic {t} => found:{found}")
                 if found:
                     logging.debug(f"Remove topic {t} from checker")
                     self.__topics_to_check.remove(t)
@@ -222,14 +222,13 @@ class Broker:
             raise ValueError(
                 f'The topic name {self.__reply_topic} cannot be used'
                 )
-        logging.debug(f'Start consuming from topic: {new_topic}')
         if new_topic not in self.__subribed_topics:
+            logging.debug(f'Start consuming from topic: {new_topic}')
             self.__subribed_topics.append(new_topic)
             self.__consumer.subscribe(
                 self.__subribed_topics, on_assign=self.__on_assign)
         else:
-            self.__consumer.subscribe(
-                self.__subribed_topics, on_assign=self.__on_assign)
+            logging.debug(f'Topic {new_topic} is already consuming')
 
     def remove_topic(self, topic_to_remove):
         if topic_to_remove == self.__reply_topic:
@@ -237,10 +236,13 @@ class Broker:
                 f'The topic name {self.__reply_topic} cannot be used'
                 )
         if topic_to_remove in self.__subribed_topics:
+            logging.debug(f'Topic {topic_to_remove} will be removed')
             self.__subribed_topics.remove(topic_to_remove)
             self.__consumer.subscribe(
                 self.__subribed_topics, on_assign=self.__on_assign
                 )
+        else:
+            logging.debug(f'Topic {topic_to_remove} is not present')
   
     def send_command(self, message: str):
         broker_cmd_in_topic = self.__config.get(self.__enviroment_set, 'k2eg_cmd_topic')

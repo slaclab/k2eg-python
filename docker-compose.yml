@@ -16,7 +16,7 @@ services:
           wait
           python tools/init-test-topics.py
           sleep 30
-          pytest -o log_cli=true
+          pytest -o log_cli=true -o log_cli_level=DEBUG
     environment:
       K2EG_PYTHON_ENABLE_KAFKA_DEBUG_LOG: true
       WAIT_HOSTS: kafka:9092

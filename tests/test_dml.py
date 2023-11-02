@@ -109,7 +109,7 @@ def test_k2eg_monitor_many():
             received_message_b = True
 
     k.monitor_many(['pva://channel:ramp:rampa', 'pva://channel:ramp:rampb'], monitor_handler)
-    while (received_message_a is False or received_message_b is False) and retry < 50:
+    while (received_message_a is False or received_message_b is False) and retry < 5:
         retry = retry+1
         time.sleep(2)
     

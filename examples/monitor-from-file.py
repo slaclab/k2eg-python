@@ -27,7 +27,7 @@ def example_monitor(k:k2eg, filename: str):
     else:
         logging.info("Submit monitor for {len(pv_list)} PVs")
 
-    r=k.monitor_many(pv_list, monitor_handler)
+    k.monitor_many(pv_list, monitor_handler)
     start_time = time.time()
     end_time = start_time + 30
     while time.time() < end_time:
@@ -57,7 +57,7 @@ if __name__ == "__main__":
         print("Bad value {}".format(e))
         pass
     except  TimeoutError as e:
-        print("Client timeout")
+        print(f"Client timeout {e}")
         pass
 
     finally:

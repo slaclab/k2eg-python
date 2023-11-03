@@ -175,6 +175,8 @@ class Broker:
                         p.offset = new_offset
                     elif high < 0:
                         p.offset = OFFSET_END
+                    else:
+                        p.offset = OFFSET_BEGINNING
                 except Exception as e:
                     logging.debug(f'got exception on metadata refresh: {e}')
                     p.offset = OFFSET_END

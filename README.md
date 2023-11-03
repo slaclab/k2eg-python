@@ -26,8 +26,8 @@ the below code snippet will take the configuration from the file env_1.ini
 ```python
 from k2eg.dml import dml as k2eg
 
-k = k2eg('env_1')
-get_value = k.get('...', 'pva')
+k = k2eg('env_1', 'app-name')
+got_value = k.get('pva://...')
 ```
 
 preconfigurated environment are stored into an internal folder.

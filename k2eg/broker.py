@@ -18,6 +18,7 @@ class TopicChecker:
     def __init__(self):
         self.__topics_to_check = []
         self.__check_timeout = None
+        self.__mutex = threading.Lock()
 
     def __check_for_topic(self, topic_name, consumer:Consumer):
         cluster_metadata = consumer.list_topics(topic_name, 1.0)
@@ -25,24 +26,34 @@ class TopicChecker:
                 != KafkaError.UNKNOWN_TOPIC_OR_PART
 
     def add_topic(self, topic_name):
-        logging.debug(f"Add topic {topic_name} to checker")
-        self.__topics_to_check.append(topic_name)
+        with self.__mutex:
+            logging.debug(f"Add topic {topic_name} to checker")
+            self.__topics_to_check.append(topic_name)
+
+    def remove_topic(self, topic_name):
+        with self.__mutex:
+            if topic_name in self.__topics_to_check:
+                logging.debug(f"remove topic {topic_name} to checker")
+                self.__topics_to_check.append(topic_name)
+            else:
+                logging.debug(f"topic {topic_name} not in checker")
 
     def update_metadata(self, consumer: Consumer) -> bool:
         to_check =  self.__check_timeout is None or \
                     (self.__check_timeout is not None and \
                     datetime.datetime.now() > self.__check_timeout)
         if to_check:
-            for t in self.__topics_to_check:
-                found = self.__check_for_topic(t, consumer)
-                logging.debug(f"Check for topic {t} => found:{found}")
-                if found:
-                    logging.debug(f"Remove topic {t} from checker")
-                    self.__topics_to_check.remove(t)
+            with self.__mutex:
+                for t in self.__topics_to_check:
+                    found = self.__check_for_topic(t, consumer)
+                    logging.debug(f"Check for topic {t} => found:{found}")
+                    if found:
+                        logging.debug(f"Remove topic {t} from checker")
+                        self.__topics_to_check.remove(t)
 
-            if(len(self.__topics_to_check)>0):
-                self.__check_timeout = datetime.datetime.now() \
-                    + datetime.timedelta(seconds=3)
+                if(len(self.__topics_to_check)>0):
+                    self.__check_timeout = datetime.datetime.now() \
+                        + datetime.timedelta(seconds=3)
 
 class Broker:
     """
@@ -161,7 +172,7 @@ class Broker:
                     new_offset = high-1
                     logging.debug(f'set reading from {new_offset} for topic: {p.topic}')
                     p.offset = new_offset
-                else:
+                elif high < 0:
                     p.offset = OFFSET_END
         consumer.assign(partitions)
 
@@ -245,6 +256,7 @@ class Broker:
             raise ValueError(
                 f'The topic name {self.__reply_topic} cannot be used'
                 )
+        self.__topic_checker.remove_topic(topic_to_remove)
         if topic_to_remove in self.__subribed_topics:
             logging.debug(f'Topic {topic_to_remove} will be removed')
             self.__subribed_topics.remove(topic_to_remove)

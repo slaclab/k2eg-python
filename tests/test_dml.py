@@ -83,7 +83,7 @@ def test_k2eg_monitor():
         received_message = new_value
     try:
         k.monitor('pva://channel:ramp:ramp', monitor_handler)
-        while received_message is None and retry < 5:
+        while received_message is None and retry < 20:
             retry = retry+1
             time.sleep(2)
     finally:

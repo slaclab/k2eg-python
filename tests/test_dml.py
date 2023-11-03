@@ -13,6 +13,10 @@ TestCase.maxDiff = None
 def my_setup(request):
     print('Enable k2eg')
     global k
+    logging.basicConfig(
+            format="[%(asctime)s %(levelname)-8s] %(message)s",
+            level=logging.DEBUG,
+        )
     k = k2eg.dml('test', 'app-test')
     def fin():
         global k

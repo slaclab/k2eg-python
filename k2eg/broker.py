@@ -34,7 +34,7 @@ class TopicChecker:
         with self.__mutex:
             if topic_name in self.__topics_to_check:
                 logging.debug(f"remove topic {topic_name} to checker")
-                self.__topics_to_check.append(topic_name)
+                self.__topics_to_check.remove(topic_name)
             else:
                 logging.debug(f"topic {topic_name} not in checker")
 
@@ -157,8 +157,6 @@ class Broker:
     def __on_assign(self, consumer, partitions):
         for p in partitions:
             logging.debug(f"Joined topic {p.topic} with partition {p.partition}")
-            low, high = consumer.get_watermark_offsets(p)
-            logging.debug(f'Found max and min [{high},{low}] index for topic: {p.topic}')
             if p.topic == self.__reply_topic:
                 self.__reply_topic_joined = True
                 self.__reply_partition_assigned.set()
@@ -166,14 +164,20 @@ class Broker:
                 logging.debug(f'Force to reading from the end for topic: {p.topic}')
                 p.offset = OFFSET_END
             else:
-                # in this case we have to go one index behing to start reading from the
-                # last element in the queue
-                if high >= 1:
-                    new_offset = high-1
-                    logging.debug(f'set reading from {new_offset} for topic: {p.topic}')
-                    p.offset = new_offset
-                elif high < 0:
-                    p.offset = OFFSET_END
+                try:
+                    low, high = consumer.get_watermark_offsets(p)
+                    logging.debug(f'Found max and min [{high},{low}] index for topic: {p.topic}')
+                    # in this case we have to go one index behing to start reading from the
+                    # last element in the queue
+                    if high >= 1:
+                        new_offset = high-1
+                        logging.debug(f'set reading from {new_offset} for topic: {p.topic}')
+                        p.offset = new_offset
+                    elif high < 0:
+                        p.offset = OFFSET_END
+                except:
+                     p.offset = OFFSET_END
+                   
         consumer.assign(partitions)
 
 

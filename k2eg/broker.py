@@ -157,17 +157,17 @@ class Broker:
     def __on_assign(self, consumer, partitions):
         for p in partitions:
             logging.debug(f"Joined topic {p.topic} with partition {p.partition}")
+            low, high = consumer.get_watermark_offsets(p)
+            logging.debug(f'Found max and min [{high},{low}] index for topic: {p.topic}')
             if p.topic == self.__reply_topic:
                 self.__reply_topic_joined = True
                 self.__reply_partition_assigned.set()
-                if p.offset==-1 or p.offset==-1001:
-                    logging.debug(f'set reading from the end for topic: {p.topic}')
-                    p.offset = OFFSET_END
+                #if p.offset==-1 or p.offset==-1001:
+                logging.debug(f'Force to reading from the end for topic: {p.topic}')
+                p.offset = OFFSET_END
             else:
                 # in this case we have to go one index behing to start reading from the
                 # last element in the queue
-                low, high = consumer.get_watermark_offsets(p)
-                logging.debug(f'Found max and min [{high},{low}] index for topic: {p.topic}')
                 if high >= 1:
                     new_offset = high-1
                     logging.debug(f'set reading from {new_offset} for topic: {p.topic}')

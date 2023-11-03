@@ -1,4 +1,5 @@
 import json
+import logging
 import k2eg
 from k2eg.dml import _filter_pv_uri
 import time
@@ -90,6 +91,7 @@ def test_k2eg_monitor_on_already_started_mon():
     previous_event_data = None
     def monitor_handler(pv_name, new_value):
         nonlocal last_received_data
+        logging.info(f"Received event from {pv_name}")
         last_received_data = new_value
     try:
         retry = 0
@@ -102,7 +104,7 @@ def test_k2eg_monitor_on_already_started_mon():
         assert last_received_data is not None, "value should not be None"
         # now stop the consume
         k.stop_monitor('variable:a')
-
+        logging.info("retry to reread form the same pv should receive the same last record")
         previous_event_data = last_received_data
         #reset variable for receive data
         last_received_data = None

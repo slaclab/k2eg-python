@@ -150,7 +150,7 @@ class Broker:
                 self.__reply_topic_joined = True
                 self.__reply_partition_assigned.set()
                 if p.offset==-1 or p.offset==-1001:
-                    logging.debug(f'set reading from beginning for topic: {p.topic}')
+                    logging.debug(f'set reading from the end for topic: {p.topic}')
                     p.offset = OFFSET_END
             else:
                 # in this case we have to go one index behing to start reading from the
@@ -220,7 +220,7 @@ class Broker:
             return None    
         if message.error():
             if message.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
-                logging.info(f"Topic {message.topic()} not found, add it tochecker")
+                logging.info(f"Topic {message.topic()} not found, add it to checker")
                 self.__topic_checker.add_topic(message.topic())
         return message
     

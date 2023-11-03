@@ -157,9 +157,12 @@ class Broker:
                 # last element in the queue
                 low, high = consumer.get_watermark_offsets(p)
                 logging.debug(f'Found max and min [{high},{low}] index for topic: {p.topic}')
-                new_offset = high
-                logging.debug(f'set reading from {new_offset} for topic: {p.topic}')
-                p.offset = new_offset
+                if high >= 1:
+                    new_offset = high-1
+                    logging.debug(f'set reading from {new_offset} for topic: {p.topic}')
+                    p.offset = new_offset
+                else:
+                    p.offset = OFFSET_END
         consumer.assign(partitions)
 
 

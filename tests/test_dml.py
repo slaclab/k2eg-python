@@ -86,13 +86,13 @@ def test_k2eg_monitor():
     assert received_message is not None, "value should not be None"
 
 def test_k2eg_monitor_on_already_started_mon():
-    retry = 0
     last_received_data = None
     previous_event_data = None
     def monitor_handler(pv_name, new_value):
         nonlocal last_received_data
         last_received_data = new_value
     try:
+        retry = 0
         #this will emit only one message
         k.monitor('pva://variable:a', monitor_handler)
         while last_received_data is None and retry < 20:
@@ -106,8 +106,9 @@ def test_k2eg_monitor_on_already_started_mon():
         previous_event_data = last_received_data
         #reset variable for receive data
         last_received_data = None
+        retry = 0
         k.monitor('pva://variable:a', monitor_handler)
-        while last_received_data is None and retry < 5:
+        while last_received_data is None and retry < 20:
             retry = retry+1
             time.sleep(2)
     finally:

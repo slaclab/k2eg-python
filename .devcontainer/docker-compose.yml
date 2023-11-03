@@ -48,7 +48,7 @@ services:
       "--scheduler-check-delay-seconds=60",
       "--scheduler-thread-number=1",
       "--monitor-worker-cron-schedule=*/30 * * * * *",
-      "--nc-monitor-expiration-timeout=3600",
+      "--nc-monitor-expiration-timeout=1",
       "--nc-purge-queue-on-exp-timeout=true"]
   
   kafka:

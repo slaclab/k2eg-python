@@ -47,7 +47,7 @@ class TopicChecker:
                 for t in self.__topics_to_check:
                     found = self.__check_for_topic(t, consumer)
                     logging.debug(f"Check for topic {t} => found:{found}")
-                    low, high = consumer.get_watermark_offsets(p)
+                    low, high = consumer.get_watermark_offsets(t)
                     logging.debug(f'Found max and min [{high},{low}] index for topic: {t}')
                     if found:
                         logging.debug(f"Remove topic {t} from checker")

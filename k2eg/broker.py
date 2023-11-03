@@ -47,6 +47,8 @@ class TopicChecker:
                 for t in self.__topics_to_check:
                     found = self.__check_for_topic(t, consumer)
                     logging.debug(f"Check for topic {t} => found:{found}")
+                    low, high = consumer.get_watermark_offsets(p)
+                    logging.debug(f'Found max and min [{high},{low}] index for topic: {t}')
                     if found:
                         logging.debug(f"Remove topic {t} from checker")
                         self.__topics_to_check.remove(t)
@@ -120,7 +122,7 @@ class Broker:
             'group.id': group_name,
             'group.instance.id': app_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
-            'enable.auto.commit': 'false',
+            'enable.auto.commit': 'true',
             'topic.metadata.refresh.interval.ms': '60000'
         }
         if enable_kafka_debug is True:

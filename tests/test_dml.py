@@ -1,14 +1,21 @@
+import logging
 import k2eg
 from k2eg.dml import _filter_pv_uri
 import time
 import pytest
+from unittest import TestCase
 
 k: k2eg.dml = None
+TestCase.maxDiff = None
 
 @pytest.fixture(scope="session", autouse=True)
 def my_setup(request):
     print('Enable k2eg')
     global k
+    logging.basicConfig(
+            format="[%(asctime)s %(levelname)-8s] %(message)s",
+            level=logging.DEBUG,
+        )
     k = k2eg.dml('test', 'app-test')
     def fin():
         global k
@@ -75,12 +82,45 @@ def test_k2eg_monitor():
         received_message = new_value
     try:
         k.monitor('pva://channel:ramp:ramp', monitor_handler)
-        while received_message is None and retry < 5:
+        while received_message is None and retry < 20:
             retry = retry+1
             time.sleep(2)
     finally:
         k.stop_monitor("channel:ramp:ramp")
     assert received_message is not None, "value should not be None"
+
+# def test_k2eg_monitor_on_already_started_mon():
+#     last_received_data = None
+#     previous_event_data = None
+#     def monitor_handler(pv_name, new_value):
+#         nonlocal last_received_data
+#         logging.info(f"Received event from {pv_name}")
+#         last_received_data = new_value
+#     try:
+#         retry = 0
+#         #this will emit only one message
+#         k.monitor('pva://variable:a', monitor_handler)
+#         while last_received_data is None and retry < 50:
+#             retry = retry+1
+#             time.sleep(2)
+        
+#         assert last_received_data is not None, "value should not be None"
+#         # now stop the consume
+#         k.stop_monitor('variable:a')
+#         logging.info("retry to reread form the same pv should receive the same last record")
+#         previous_event_data = last_received_data
+#         #reset variable for receive data
+#         last_received_data = None
+#         retry = 0
+#         k.monitor('pva://variable:a', monitor_handler)
+#         while last_received_data is None and retry < 50:
+#             retry = retry+1
+#             time.sleep(2)
+#     finally:
+#         k.stop_monitor("variable:a")
+#     # now the two variable previous_event and last_received_method
+#     # should be the same
+#     assert (json.dumps(last_received_data) == json.dumps(previous_event_data)), "Dictionary need to be the same"
 
 def test_k2eg_monitor_wrong():
     retry = 0

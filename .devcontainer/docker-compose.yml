@@ -39,7 +39,7 @@ services:
     depends_on: 
       - kafka
     command: [
-      "--log-level=debug", 
+      "--log-level=trace", 
       "--cmd-input-topic=cmd-in-topic", 
       "--sub-server-address=kafka:9092", 
       "--sub-group-id=eed-k2eg", 
@@ -47,9 +47,10 @@ services:
       "--metric-enable=true",
       "--scheduler-check-delay-seconds=60",
       "--scheduler-thread-number=1",
-      "--monitor-worker-cron-schedule=*/30 * * * * *",
-      "--nc-monitor-expiration-timeout=3600",
-      "--nc-purge-queue-on-exp-timeout=true"]
+      "--monitor-worker-cron-schedule=*/5 * * * * *",
+      "--nc-monitor-expiration-timeout=1",
+      "--nc-purge-queue-on-exp-timeout=true",
+      "--nc-monitor-consumer-filterout-regex=.*k2eg.*"]
   
   kafka:
     image: docker.io/bitnami/kafka:3.6

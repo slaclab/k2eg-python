@@ -18,6 +18,7 @@ class TopicChecker:
     def __init__(self):
         self.__topics_to_check = []
         self.__check_timeout = None
+        self.__mutex = threading.Lock()
 
     def __check_for_topic(self, topic_name, consumer:Consumer):
         cluster_metadata = consumer.list_topics(topic_name, 1.0)
@@ -25,24 +26,36 @@ class TopicChecker:
                 != KafkaError.UNKNOWN_TOPIC_OR_PART
 
     def add_topic(self, topic_name):
-        logging.debug(f"Add topic {topic_name} to checker")
-        self.__topics_to_check.append(topic_name)
+        with self.__mutex:
+            logging.debug(f"Add topic {topic_name} to checker")
+            self.__topics_to_check.append(topic_name)
+
+    def remove_topic(self, topic_name):
+        with self.__mutex:
+            if topic_name in self.__topics_to_check:
+                logging.debug(f"remove topic {topic_name} to checker")
+                self.__topics_to_check.remove(topic_name)
+            else:
+                logging.debug(f"topic {topic_name} not in checker")
 
     def update_metadata(self, consumer: Consumer) -> bool:
         to_check =  self.__check_timeout is None or \
                     (self.__check_timeout is not None and \
                     datetime.datetime.now() > self.__check_timeout)
         if to_check:
-            for t in self.__topics_to_check:
-                found = self.__check_for_topic(t, consumer)
-                logging.debug(f"Check for topic {t} => found:{found}")
-                if found:
-                    logging.debug(f"Remove topic {t} from checker")
-                    self.__topics_to_check.remove(t)
+            with self.__mutex:
+                for t in self.__topics_to_check:
+                    found = self.__check_for_topic(t, consumer)
+                    logging.debug(f"Check for topic {t} => found:{found}")
+                    # low, high = consumer.get_watermark_offsets(t)
+                    # logging.debug(f'Found max and min [{high},{low}] index for topic: {t}')
+                    if found:
+                        logging.debug(f"Remove topic {t} from checker")
+                        self.__topics_to_check.remove(t)
 
-            if(len(self.__topics_to_check)>0):
-                self.__check_timeout = datetime.datetime.now() \
-                    + datetime.timedelta(seconds=3)
+                if(len(self.__topics_to_check)>0):
+                    self.__check_timeout = datetime.datetime.now() \
+                        + datetime.timedelta(seconds=3)
 
 class Broker:
     """
@@ -109,7 +122,7 @@ class Broker:
             'group.id': group_name,
             'group.instance.id': app_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
-            'enable.auto.commit': 'false',
+            'enable.auto.commit': 'true',
             'topic.metadata.refresh.interval.ms': '60000'
         }
         if enable_kafka_debug is True:
@@ -149,10 +162,26 @@ class Broker:
             if p.topic == self.__reply_topic:
                 self.__reply_topic_joined = True
                 self.__reply_partition_assigned.set()
-            #low, high = consumer.get_watermark_offsets(p)
-            if p.offset==-1 or p.offset==-1001:
-                logging.debug(f'set new offset for {p.topic}')
+                #if p.offset==-1 or p.offset==-1001:
+                logging.debug(f'Force to reading from the end for topic: {p.topic}')
                 p.offset = OFFSET_END
+            else:
+                try:
+                    low, high = consumer.get_watermark_offsets(p)
+                    logging.debug(f'Found max and min [{high},{low}] index for topic: {p.topic}')
+                    # in this case we have to go one index behing to start reading from the
+                    # last element in the queue
+                    if high >= 1:
+                        new_offset = high-1
+                        logging.debug(f'set reading from {new_offset} for topic: {p.topic}')
+                        p.offset = new_offset
+                    elif high < 0:
+                        p.offset = OFFSET_END
+                    else:
+                        p.offset = OFFSET_BEGINNING
+                except Exception as e:
+                    logging.debug(f'got exception on metadata refresh: {e}')
+                    p.offset = OFFSET_END       
         consumer.assign(partitions)
 
 
@@ -202,15 +231,15 @@ class Broker:
         except KafkaException as e:
             logging.error(e)
        
-    def get_next_message(self, timeout = 0.1):
-        message = self.__consumer.poll(timeout)
+    def get_next_message(self, timeout = 0.300):
+        message = self.__consumer.poll(timeout=timeout)
         # give a chanche to update metadata ofr pending topics
         self.__topic_checker.update_metadata(self.__consumer)
         if message is None:
             return None    
         if message.error():
             if message.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
-                logging.info(f"Topic {message.topic()} not found, add it tochecker")
+                logging.info(f"Topic {message.topic()} not found, add it to checker")
                 self.__topic_checker.add_topic(message.topic())
         return message
     
@@ -235,6 +264,7 @@ class Broker:
             raise ValueError(
                 f'The topic name {self.__reply_topic} cannot be used'
                 )
+        self.__topic_checker.remove_topic(topic_to_remove)
         if topic_to_remove in self.__subribed_topics:
             logging.debug(f'Topic {topic_to_remove} will be removed')
             self.__subribed_topics.remove(topic_to_remove)

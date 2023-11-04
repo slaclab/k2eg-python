@@ -386,8 +386,9 @@ class dml:
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
 
     def close(self):
-        self.__consume_data = False
+        # signal thread to terminate
+        if self.__thread is not None:
+            self.__consume_data = False
+            self.__thread.join()
         if self.__broker is not None:
             self.__broker.close()
-        if self.__thread is not None:
-            self.__thread.join()

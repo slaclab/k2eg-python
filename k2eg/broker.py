@@ -47,8 +47,8 @@ class TopicChecker:
                 for t in self.__topics_to_check:
                     found = self.__check_for_topic(t, consumer)
                     logging.debug(f"Check for topic {t} => found:{found}")
-                    low, high = consumer.get_watermark_offsets(t)
-                    logging.debug(f'Found max and min [{high},{low}] index for topic: {t}')
+                    # low, high = consumer.get_watermark_offsets(t)
+                    # logging.debug(f'Found max and min [{high},{low}] index for topic: {t}')
                     if found:
                         logging.debug(f"Remove topic {t} from checker")
                         self.__topics_to_check.remove(t)
@@ -181,8 +181,7 @@ class Broker:
                         p.offset = OFFSET_BEGINNING
                 except Exception as e:
                     logging.debug(f'got exception on metadata refresh: {e}')
-                    p.offset = OFFSET_END
-                   
+                    p.offset = OFFSET_END       
         consumer.assign(partitions)
 
 
@@ -232,8 +231,8 @@ class Broker:
         except KafkaException as e:
             logging.error(e)
        
-    def get_next_message(self, timeout = 0.1):
-        message = self.__consumer.poll(timeout)
+    def get_next_message(self, timeout = 0.300):
+        message = self.__consumer.poll(timeout=timeout)
         # give a chanche to update metadata ofr pending topics
         self.__topic_checker.update_metadata(self.__consumer)
         if message is None:

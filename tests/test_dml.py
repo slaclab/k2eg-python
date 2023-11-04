@@ -1,4 +1,3 @@
-import json
 import logging
 import k2eg
 from k2eg.dml import _filter_pv_uri

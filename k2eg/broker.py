@@ -172,9 +172,9 @@ class Broker:
                     # in this case we have to go one index behing to start reading from the
                     # last element in the queue
                     if high >= 1:
-                        new_offset = high-1
-                        logging.debug(f'set reading from {new_offset} for topic: {p.topic}')
-                        p.offset = new_offset
+                        # new_offset = high
+                        logging.debug(f"offset for topic '{p.topic}' is '{high}'")
+                        p.offset = OFFSET_END
                     elif high < 0:
                         p.offset = OFFSET_END
                     else:

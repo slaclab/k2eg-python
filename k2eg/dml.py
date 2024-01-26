@@ -78,6 +78,9 @@ class dml:
         else:
             msg_id = list(decodec_msg.keys())[0]
             converted_msg = decodec_msg
+        
+        # Add message-size key with the received msgpack size
+        converted_msg['message-size'] = len(m_msg)
         return msg_id, converted_msg
 
     def __from_msgpack_compack(self, mc_msg):

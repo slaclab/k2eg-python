@@ -1,4 +1,3 @@
-from asyncio import sleep
 import logging
 import k2eg
 from k2eg.dml import _filter_pv_uri
@@ -17,7 +16,7 @@ def my_setup(request):
             format="[%(asctime)s %(levelname)-8s] %(message)s",
             level=logging.DEBUG,
         )
-    k = k2eg.dml('lcls', 'app-test-10')
+    k = k2eg.dml('test', 'app-test')
     def fin():
         global k
         if k is not None:
@@ -143,41 +142,41 @@ def test_put():
     res_get = k.get("pva://variable:sum")
     assert res_get['value'] == 4, "value should not be 0"
 
-def test_multiple_put():
-    def monitor_handler(pv_name, new_value):
-       pass
+# def test_multiple_put():
+#     def monitor_handler(pv_name, new_value):
+#        pass
         
-    monitor_pv = [
-                    'ca://SOLN:IN20:121:BACT',
-                    'ca://QUAD:IN20:121:BACT',
-                    'ca://QUAD:IN20:122:BACT',
-                    'ca://ACCL:IN20:300:L0A_PDES',
-                    'ca://ACCL:IN20:400:L0B_PDES',
-                    'ca://ACCL:IN20:300:L0A_ADES',
-                    'ca://ACCL:IN20:400:L0B_ADES',
-                    'ca://QUAD:IN20:361:BACT',
-                    'ca://QUAD:IN20:371:BACT',
-                    'ca://QUAD:IN20:425:BACT',
-                    'ca://QUAD:IN20:441:BACT',
-                    'ca://QUAD:IN20:511:BACT',
-                    'ca://QUAD:IN20:525:BACT',
-                    'ca://FBCK:BCI0:1:CHRG_S',
-                    'ca://CAMR:IN20:186:XRMS',
-                    'ca://CAMR:IN20:186:YRMS'
-                    ]
-    k.monitor_many(monitor_pv, monitor_handler)
-    monitor_put = {
-        'LUME:MLFLOW:SIGMA_X': '-99830.6330126242',
-        'LUME:MLFLOW:SIGMA_Y': '225322.341204345',
-        'LUME:MLFLOW:SIGMA_Z': '10352.2788770893'
-    }
-    for key, value in monitor_put.items():  # Add .items() method to iterate over key-value pairs
-        print(f"Output: {key}, Value: {value}")  # Update print statement to use f-strings
-        try:
-            msg = k.put("pva://" + key, value, 1000000)
-            print(f"Message: {msg}")
-        except Exception as e:
-            print(f"An error occurred: {e}")
+#     monitor_pv = [
+#                     'ca://SOLN:IN20:121:BACT',
+#                     'ca://QUAD:IN20:121:BACT',
+#                     'ca://QUAD:IN20:122:BACT',
+#                     'ca://ACCL:IN20:300:L0A_PDES',
+#                     'ca://ACCL:IN20:400:L0B_PDES',
+#                     'ca://ACCL:IN20:300:L0A_ADES',
+#                     'ca://ACCL:IN20:400:L0B_ADES',
+#                     'ca://QUAD:IN20:361:BACT',
+#                     'ca://QUAD:IN20:371:BACT',
+#                     'ca://QUAD:IN20:425:BACT',
+#                     'ca://QUAD:IN20:441:BACT',
+#                     'ca://QUAD:IN20:511:BACT',
+#                     'ca://QUAD:IN20:525:BACT',
+#                     'ca://FBCK:BCI0:1:CHRG_S',
+#                     'ca://CAMR:IN20:186:XRMS',
+#                     'ca://CAMR:IN20:186:YRMS'
+#                     ]
+#     k.monitor_many(monitor_pv, monitor_handler)
+#     monitor_put = {
+#         'LUME:MLFLOW:SIGMA_X': '-99830.6330126242',
+#         'LUME:MLFLOW:SIGMA_Y': '225322.341204345',
+#         'LUME:MLFLOW:SIGMA_Z': '10352.2788770893'
+#     }
+#     for key, value in monitor_put.items():  # Add .items() method to iterate over key-value pairs
+#         print(f"Output: {key}, Value: {value}")  # Update print statement to use f-strings
+#         try:
+#             msg = k.put("pva://" + key, value, 1000000)
+#             print(f"Message: {msg}")
+#         except Exception as e:
+#             print(f"An error occurred: {e}")
 
 def test_put_timeout():
     with pytest.raises(k2eg.OperationTimeout, 

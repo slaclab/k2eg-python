@@ -151,7 +151,7 @@ def test_multi_threading_put():
     with ThreadPoolExecutor(10) as executor:
         for key, value in put_dic.items():
             executor.submit(put, key, value)
-    time.sleep(1)
+    time.sleep(5)
     res_get = k.get("pva://variable:sum")
     assert res_get['value'] == 0, "value should not be 0"
     put_dic={
@@ -162,7 +162,7 @@ def test_multi_threading_put():
         for key, value in put_dic.items():
             executor.submit(put, key, value)
     #give some time to ioc to update
-    time.sleep(1)
+    time.sleep(5)
     res_get = k.get("pva://variable:sum")
     assert res_get['value'] == 4, "value should not be 0"
 

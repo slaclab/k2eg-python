@@ -123,10 +123,10 @@ class Broker:
             'group.instance.id': app_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
             'enable.auto.commit': 'true',
-            'topic.metadata.refresh.interval.ms': '60000'
+            'topic.metadata.refresh.interval.ms': '60000',
         }
         if enable_kafka_debug is True:
-            config_consumer['debug'] = 'consumer,cgrp,topic' #fetch
+            config_consumer['debug'] = 'consumer,fetch'
 
         self.__consumer = Consumer(config_consumer)
         config_producer = {
@@ -164,7 +164,7 @@ class Broker:
                 self.__reply_partition_assigned.set()
                 #if p.offset==-1 or p.offset==-1001:
                 logging.debug(f'Force to reading from the end for topic: {p.topic}')
-                p.offset = OFFSET_END
+                #p.offset = OFFSET_END
             else:
                 try:
                     low, high = consumer.get_watermark_offsets(p)
@@ -236,7 +236,10 @@ class Broker:
         # give a chanche to update metadata ofr pending topics
         self.__topic_checker.update_metadata(self.__consumer)
         if message is None:
-            return None    
+            return None
+        # tp = TopicPartition(message.topic(), message.partition(), message.offset() + 1)
+        # # Asynchronous commit
+        # self.__consumer.commit(offsets=[tp], asynchronous=True)
         if message.error():
             if message.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
                 logging.info(f"Topic {message.topic()} not found, add it to checker")

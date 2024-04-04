@@ -153,7 +153,7 @@ class dml:
                             # print(f"message received from topic: {message.topic()} offset: {message.offset()}")
                             logging.debug(f"received reply on topic {message.topic()}")
                             self.reply_message[msg_id] = decoded_message
-                            self.reply_wait_condition.notifyAll()
+                            self.reply_wait_condition.notify_all()
                         elif msg_id in self.__monitor_pv_handler:
                                 executor.submit(
                                     self.process_event,
@@ -178,21 +178,20 @@ class dml:
 
     def __wait_for_reply(self, new_reply_id, timeout) -> (int, any):
         #with self.reply_wait_condition:
-        got_it = self.reply_wait_condition.wait(timeout)
-        if(got_it is False):
-            # the timeout is expired, so delete the answer slot
-            # and rise exception
-            del(self.reply_message[new_reply_id])
+        got_it = self.reply_wait_condition.wait_for(
+            lambda: new_reply_id in self.reply_message and self.reply_message[new_reply_id] is not None,
+            timeout
+        )
+        if not got_it:
+            # The timeout has expired and no message was received
             return -2, None
-        if self.reply_message[new_reply_id] is None:
-            return -1
-        reply_msg = self.reply_message[new_reply_id]
-        del(self.reply_message[new_reply_id])
-        error = reply_msg['error']
+        reply_msg = self.reply_message.pop(new_reply_id, None)
+        if reply_msg is None:
+            # This should not occur due to the lambda check, but added as a safety net
+            return -1, None
+        error = reply_msg.get('error', 0)
         if error != 0:
-            str_msg = None
-            if 'message' in reply_msg:
-                str_msg = reply_msg['message']   
+            str_msg = reply_msg.get('message', None)
             raise OperationError(error, str_msg)
         return 0, reply_msg
 
@@ -224,7 +223,7 @@ class dml:
                 if op_res == -2:
                     # raise timeout exception
                     raise OperationTimeout(
-                            f"Timeout during start monitor operation for {pv_name}"
+                            f"Timeout during get operation for {pv_name}"
                             )
                 elif op_res == -1:
                     continue
@@ -269,7 +268,7 @@ class dml:
                 if op_res == -2:
                     # raise timeout exception
                     raise OperationTimeout(
-                            f"Timeout during start monitor operation for {pv_name}"
+                            f"Timeout during start get operation for {pv_name}"
                             )
                 elif op_res == -1:
                     continue

@@ -43,7 +43,7 @@ def delete_topics(a, topics):
 if __name__ == "__main__":
     admin = AdminClient({'bootstrap.servers': 'kafka:9092','debug': 'cgrp,topic,fetch'})
     print('delete topic')
-    delete_topics(admin, ['cmd-in-topic', 'app-test-reply', 'ke2g-app-reply'])
+    delete_topics(admin, ['cmd-in-topic', 'app-test-reply', 'ke2g-app-reply', 'channel_ramp_ramp', 'channel_ramp_rampa' 'channel_ramp_rampb', 'channel_ramp_rampc'])
     sleep(5)
     print('recreate topic')
-    create_topics(admin, ['cmd-in-topic', 'app-test-reply', 'ke2g-app-reply'])
+    create_topics(admin, ['cmd-in-topic', 'app-test-reply', 'ke2g-app-reply', 'channel_ramp_ramp', 'channel_ramp_rampa' 'channel_ramp_rampb', 'channel_ramp_rampc'])

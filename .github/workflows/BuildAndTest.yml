@@ -51,4 +51,5 @@ jobs:
         - name: Clean resources
           if: always()
           run: |
+            docker compose logs
             docker compose down -v --rmi all

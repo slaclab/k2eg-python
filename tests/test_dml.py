@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import k2eg
 from k2eg.dml import _filter_pv_uri
@@ -142,6 +143,29 @@ def test_put():
     res_get = k.get("pva://variable:sum")
     assert res_get['value'] == 4, "value should not be 0"
 
+def test_multi_threading_put():
+    put_dic={
+        "pva://variable:a": 0,
+        "pva://variable:b": 0
+    }
+    with ThreadPoolExecutor(10) as executor:
+        for key, value in put_dic.items():
+            executor.submit(put, key, value)
+    time.sleep(5)
+    res_get = k.get("pva://variable:sum")
+    assert res_get['value'] == 0, "value should not be 0"
+    put_dic={
+        "pva://variable:a": 2,
+        "pva://variable:b": 2
+    }
+    with ThreadPoolExecutor(10) as executor:
+        for key, value in put_dic.items():
+            executor.submit(put, key, value)
+    #give some time to ioc to update
+    time.sleep(5)
+    res_get = k.get("pva://variable:sum")
+    assert res_get['value'] == 4, "value should not be 0"
+
 # def test_multiple_put():
 #     def monitor_handler(pv_name, new_value):
 #        pass
@@ -164,19 +188,25 @@ def test_put():
 #                     'ca://CAMR:IN20:186:XRMS',
 #                     'ca://CAMR:IN20:186:YRMS'
 #                     ]
-#     k.monitor_many(monitor_pv, monitor_handler)
+#     #k.monitor_many(monitor_pv, monitor_handler)
 #     monitor_put = {
-#         'LUME:MLFLOW:SIGMA_X': '-99830.6330126242',
-#         'LUME:MLFLOW:SIGMA_Y': '225322.341204345',
-#         'LUME:MLFLOW:SIGMA_Z': '10352.2788770893'
+#         'pva://LUME:MLFLOW:SIGMA_X': '-99830.6330126242',
+#         'pva://LUME:MLFLOW:SIGMA_Y': '225322.341204345',
+#         'pva://LUME:MLFLOW:SIGMA_Z': '10352.2788770893'
 #     }
-#     for key, value in monitor_put.items():  # Add .items() method to iterate over key-value pairs
-#         print(f"Output: {key}, Value: {value}")  # Update print statement to use f-strings
-#         try:
-#             msg = k.put("pva://" + key, value, 1000000)
-#             print(f"Message: {msg}")
-#         except Exception as e:
-#             print(f"An error occurred: {e}")
+#     time_start = time.time()
+#     with ThreadPoolExecutor(10) as executor:
+#         for key, value in monitor_put.items():
+#             executor.submit(put, key, value)
+#     time_end = time.time()
+#     print(f"Time taken to put: {time_end - time_start} - {(time_end - time_start)/len(monitor_put) })")
+
+def put(key, value):
+    try:
+        k.put(key, value, 10)
+        print(f"Put {key} with value {value}")
+    except Exception as e:
+        print(f"An error occured: {e}")
 
 def test_put_timeout():
     with pytest.raises(k2eg.OperationTimeout, 

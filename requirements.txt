@@ -13,3 +13,4 @@ readerwriterlock
 click-loglevel
 click
 click_repl
+pytest

@@ -89,38 +89,6 @@ def test_k2eg_monitor():
         k.stop_monitor("channel:ramp:ramp")
     assert received_message is not None, "value should not be None"
 
-# def test_k2eg_monitor_on_already_started_mon():
-#     last_received_data = None
-#     previous_event_data = None
-#     def monitor_handler(pv_name, new_value):
-#         nonlocal last_received_data
-#         logging.info(f"Received event from {pv_name}")
-#         last_received_data = new_value
-#     try:
-#         retry = 0
-#         #this will emit only one message
-#         k.monitor('pva://variable:a', monitor_handler)
-#         while last_received_data is None and retry < 50:
-#             retry = retry+1
-#             time.sleep(2)
-        
-#         assert last_received_data is not None, "value should not be None"
-#         # now stop the consume
-#         k.stop_monitor('variable:a')
-#         logging.info("retry to reread form the same pv should receive the same last record")
-#         previous_event_data = last_received_data
-#         #reset variable for receive data
-#         last_received_data = None
-#         retry = 0
-#         k.monitor('pva://variable:a', monitor_handler)
-#         while last_received_data is None and retry < 50:
-#             retry = retry+1
-#             time.sleep(2)
-#     finally:
-#         k.stop_monitor("variable:a")
-#     # now the two variable previous_event and last_received_method
-#     # should be the same
-#     assert (json.dumps(last_received_data) == json.dumps(previous_event_data)), "Dictionary need to be the same"
 
 def test_k2eg_monitor_wrong():
     retry = 0
@@ -173,6 +141,42 @@ def test_put():
     time.sleep(1)
     res_get = k.get("pva://variable:sum")
     assert res_get['value'] == 4, "value should not be 0"
+
+# def test_multiple_put():
+#     def monitor_handler(pv_name, new_value):
+#        pass
+        
+#     monitor_pv = [
+#                     'ca://SOLN:IN20:121:BACT',
+#                     'ca://QUAD:IN20:121:BACT',
+#                     'ca://QUAD:IN20:122:BACT',
+#                     'ca://ACCL:IN20:300:L0A_PDES',
+#                     'ca://ACCL:IN20:400:L0B_PDES',
+#                     'ca://ACCL:IN20:300:L0A_ADES',
+#                     'ca://ACCL:IN20:400:L0B_ADES',
+#                     'ca://QUAD:IN20:361:BACT',
+#                     'ca://QUAD:IN20:371:BACT',
+#                     'ca://QUAD:IN20:425:BACT',
+#                     'ca://QUAD:IN20:441:BACT',
+#                     'ca://QUAD:IN20:511:BACT',
+#                     'ca://QUAD:IN20:525:BACT',
+#                     'ca://FBCK:BCI0:1:CHRG_S',
+#                     'ca://CAMR:IN20:186:XRMS',
+#                     'ca://CAMR:IN20:186:YRMS'
+#                     ]
+#     k.monitor_many(monitor_pv, monitor_handler)
+#     monitor_put = {
+#         'LUME:MLFLOW:SIGMA_X': '-99830.6330126242',
+#         'LUME:MLFLOW:SIGMA_Y': '225322.341204345',
+#         'LUME:MLFLOW:SIGMA_Z': '10352.2788770893'
+#     }
+#     for key, value in monitor_put.items():  # Add .items() method to iterate over key-value pairs
+#         print(f"Output: {key}, Value: {value}")  # Update print statement to use f-strings
+#         try:
+#             msg = k.put("pva://" + key, value, 1000000)
+#             print(f"Message: {msg}")
+#         except Exception as e:
+#             print(f"An error occurred: {e}")
 
 def test_put_timeout():
     with pytest.raises(k2eg.OperationTimeout, 

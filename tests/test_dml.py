@@ -201,12 +201,12 @@ def test_multi_threading_put():
 #     time_end = time.time()
 #     print(f"Time taken to put: {time_end - time_start} - {(time_end - time_start)/len(monitor_put) })")
 
-# def put(key, value):
-#     try:
-#         k.put(key, value, 10)
-#         print(f"Put {key} with value {value}")
-#     except Exception as e:
-#         print(f"An error occured: {e}")
+def put(key, value):
+    try:
+        k.put(key, value, 10)
+        print(f"Put {key} with value {value}")
+    except Exception as e:
+        print(f"An error occured: {e}")
 
 def test_put_timeout():
     with pytest.raises(k2eg.OperationTimeout, 

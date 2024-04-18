@@ -54,7 +54,6 @@ class dml:
             target=self.__consumer_handler
         )
         self.__thread.start()
-        self.__executor = ThreadPoolExecutor(max_workers=10)
         self.__monitor_pv_handler = {}
         self.reply_wait_condition = threading.Condition()
         self.reply_ready_event = threading.Event()
@@ -395,7 +394,6 @@ class dml:
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
 
     def close(self):
-        self.__executor.shutdown()
         # signal thread to terminate
         if self.__thread is not None:
             self.__consume_data = False

@@ -54,6 +54,7 @@ class dml:
             target=self.__consumer_handler
         )
         self.__thread.start()
+        self.__executor = ThreadPoolExecutor(max_workers=10)
         self.__monitor_pv_handler = {}
         self.reply_wait_condition = threading.Condition()
         self.reply_ready_event = threading.Event()
@@ -128,40 +129,39 @@ class dml:
             msgpack, 
             msgpack-compact
         """
-        with  ThreadPoolExecutor(max_workers=10) as executor:
-            while self.__consume_data:
-                message = self.__broker.get_next_message()
-                if message is None: 
-                    continue
-                if message.error():
-                    if message.error().code() == KafkaError._PARTITION_EOF:
-                        # End of partition event
-                        logging.error(
-                            f"{message.topic()} [{message.partition()}]reached "+
-                            f"end at offset {message.offset()}"
-                        )
-                    else:
-                        continue
+        while self.__consume_data:
+            message = self.__broker.get_next_message()
+            if message is None: 
+                continue
+            if message.error():
+                if message.error().code() == KafkaError._PARTITION_EOF:
+                    # End of partition event
+                    logging.error(
+                        f"{message.topic()} [{message.partition()}]reached "+
+                        f"end at offset {message.offset()}"
+                    )
                 else:
-                    was_a_reply = False
-                    #msg_id could be a reply id or pv name
-                    msg_id, decoded_message = self.__decode_message(message)
-                    if msg_id is None or decoded_message is None:
-                        continue
-                    with self.reply_wait_condition:
-                        was_a_reply = msg_id in self.reply_message
-                        if was_a_reply is True:
-                            # print(f"message received from topic: {message.topic()} offset: {message.offset()}")
-                            logging.debug(f"received reply on topic {message.topic()}")
-                            self.reply_message[msg_id] = decoded_message
-                            self.reply_wait_condition.notify_all()
-                        elif msg_id in self.__monitor_pv_handler:
-                                executor.submit(
-                                    self.process_event,
-                                    message.topic(),
-                                    msg_id,
-                                    decoded_message[msg_id]
-                                )
+                    continue
+            else:
+                was_a_reply = False
+                #msg_id could be a reply id or pv name
+                msg_id, decoded_message = self.__decode_message(message)
+                if msg_id is None or decoded_message is None:
+                    continue
+                with self.reply_wait_condition:
+                    was_a_reply = msg_id in self.reply_message
+                    if was_a_reply is True:
+                        # print(f"message received from topic: {message.topic()} offset: {message.offset()}")
+                        logging.debug(f"received reply on topic {message.topic()}")
+                        self.reply_message[msg_id] = decoded_message
+                        self.reply_wait_condition.notify_all()
+                    elif msg_id in self.__monitor_pv_handler:
+                            self.__executor.submit(
+                                self.process_event,
+                                message.topic(),
+                                msg_id,
+                                decoded_message[msg_id]
+                            )
 
     def parse_pv_url(self, pv_url):
         protocol, pv_name = _filter_pv_uri(pv_url)
@@ -395,6 +395,7 @@ class dml:
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
 
     def close(self):
+        self.__executor.shutdown()
         # signal thread to terminate
         if self.__thread is not None:
             self.__consume_data = False

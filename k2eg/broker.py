@@ -124,6 +124,7 @@ class Broker:
             'auto.offset.reset': 'latest',
             'enable.auto.commit': 'true',
             'topic.metadata.refresh.interval.ms': '60000',
+            'max.poll.records': 100,
         }
         if enable_kafka_debug is True:
             config_consumer['debug'] = 'consumer,fetch'

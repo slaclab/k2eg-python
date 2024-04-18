@@ -123,8 +123,7 @@ class Broker:
             'group.instance.id': app_name+'_'+app_instance_unique_id,
             'auto.offset.reset': 'latest',
             'enable.auto.commit': 'true',
-            'topic.metadata.refresh.interval.ms': '60000',
-            # 'max.poll.records':'50'
+            'topic.metadata.refresh.interval.ms': '60000'
         }
         if enable_kafka_debug is True:
             config_consumer['debug'] = 'consumer,fetch'

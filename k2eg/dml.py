@@ -8,6 +8,8 @@ from confluent_kafka import KafkaError
 from typing import Callable
 from k2eg.broker import Broker
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Callable, List, Dict, Any
 
 _protocol_regex = r"^(pva?|ca)://((?:[A-Za-z0-9-_:]+(?:\.[A-Za-z0-9-_]+)*))$"
 
@@ -30,6 +32,13 @@ class OperationError(Exception):
         # Call the base class constructor with the parameters it needs
         super().__init__(message)
         self.error = error
+
+@dataclass
+class Snapshot:
+    # The callback function to process or notify snapshot updates.
+    handler: Callable[[str, Dict[str, Any]], None]
+    # A list to store snapshot results; each result can be a dict with relevant data.
+    results: List[Dict[str, Any]] = field(default_factory=list)
 
 class dml:
     """K2EG client"""
@@ -58,7 +67,8 @@ class dml:
         self.reply_wait_condition = threading.Condition()
         self.reply_ready_event = threading.Event()
         self.reply_message = {}
-
+        #contain a vector for each reply id where snapshot are stored
+        self.reply_snapsthot_message = {}
 
     def __del__(self):
         # Perform cleanup operations when the instance is deleted
@@ -397,15 +407,23 @@ class dml:
             del self.__monitor_pv_handler[pv_name]
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
 
-    def snapshot(self,  pv_uri_list: list[str], handler: Callable[[str, dict], None], timeout: float = None):
-        """ Perform the snapshot operation"
+    def snapshot(self,  pv_uri_list: list[str], handler: Callable[[str, dict], None])->str:
+        """ Perform the snapshot operation
+        return the id to be used to match the snapthot returned in the hanlder
         """
-        #check if all the pv al wellformed
+        #check if all the pv are wellformed
         self._check_pv_list(pv_uri_list)
-
-        fetched = False
         new_reply_id = str(uuid.uuid1())
-        pass
+        with self.reply_wait_condition:
+            # Set the snapshot handler and initialize the snapshot results vector
+            self.reply_snapsthot_message[new_reply_id] = Snapshot(handler=handler)
+
+            # send message to k2eg fto execute snapshot
+            self.__broker.send_start_monitor_command_many(
+                pv_uri_list,
+                new_reply_id,
+            )
+        return new_reply_id
 
     def close(self):
         # signal thread to terminate

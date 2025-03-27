@@ -174,6 +174,12 @@ class dml:
     def __check_pv_name(self, pv_url):
         pass
 
+    def _check_pv_list(self, pv_uri_list: list[str]):
+        for pv_uri in pv_uri_list:
+            protocol, pv_name = self.parse_pv_url(pv_uri)
+            if protocol.lower() not in ("pva", "ca"):
+                raise ValueError("The protocol need to be one of 'pva'  'ca'")
+            
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
@@ -339,10 +345,7 @@ class dml:
                 False: otherwhise
         """
         fetched = False
-        for pv_uri in pv_uri_list:
-            protocol, pv_name = self.parse_pv_url(pv_uri)
-            if protocol.lower() not in ("pva", "ca"):
-                raise ValueError("The protocol need to be one of 'pva'  'ca'")
+        self._check_pv_list(pv_uri_list)
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
             filtered_list_pv_uri = []
@@ -393,6 +396,16 @@ class dml:
             # all is gone ok i can register the handler and subscribe
             del self.__monitor_pv_handler[pv_name]
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
+
+    def snapshot(self,  pv_uri_list: list[str], handler: Callable[[str, dict], None], timeout: float = None):
+        """ Perform the snapshot operation"
+        """
+        #check if all the pv al wellformed
+        self._check_pv_list(pv_uri_list)
+
+        fetched = False
+        new_reply_id = str(uuid.uuid1())
+        pass
 
     def close(self):
         # signal thread to terminate

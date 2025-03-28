@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 import logging
+from uuid import uuid1
 import k2eg
 from k2eg.dml import _filter_pv_uri
 import time
@@ -17,7 +18,7 @@ def my_setup(request):
             format="[%(asctime)s %(levelname)-8s] %(message)s",
             level=logging.DEBUG,
         )
-    k = k2eg.dml('test', 'app-test')
+    k = k2eg.dml('test', 'app-test', uuid1())
     def fin():
         global k
         if k is not None:
@@ -82,12 +83,12 @@ def test_k2eg_monitor():
         nonlocal received_message
         received_message = new_value
     try:
-        k.monitor('pva://channel:ramp:ramp', monitor_handler)
+        k.monitor('pva://channel:ramp:rampa', monitor_handler)
         while received_message is None and retry < 20:
             retry = retry+1
             time.sleep(2)
     finally:
-        k.stop_monitor("channel:ramp:ramp")
+        k.stop_monitor("channel:ramp:rampa")
     assert received_message is not None, "value should not be None"
 
 def test_k2eg_monitor_wrong():

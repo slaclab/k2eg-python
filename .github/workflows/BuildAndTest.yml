@@ -29,7 +29,7 @@ jobs:
       - name: Lint with ruff
         run: |
           # default set of ruff rules with GitHub Annotations
-          ruff  --target-version=py37 .
+          ruff  check .
 
   execute_test:
     runs-on: ubuntu-latest

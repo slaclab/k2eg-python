@@ -6,7 +6,6 @@ import threading
 from time import sleep
 from readerwriterlock import rwlock
 from confluent_kafka import KafkaError
-from typing import Callable
 from k2eg.broker import Broker
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field

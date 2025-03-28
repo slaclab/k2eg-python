@@ -36,7 +36,7 @@ services:
         - /bin/bash
         - -c
         - |
-          tmux new-session -d "source /opt/epics-var.sh; softIocPVA -d /db/epics-test.db"
+          tmux new-session -d "source /opt/epics-var.sh; softIocPVA -d /db/softioc.db"
           tail -f /dev/null
     volumes:
       - ../tests/epics-test.db:/db/softioc.db

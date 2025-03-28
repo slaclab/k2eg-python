@@ -3,6 +3,7 @@ import uuid
 import msgpack
 import logging
 import threading
+from time import sleep
 from readerwriterlock import rwlock
 from confluent_kafka import KafkaError
 from typing import Callable
@@ -428,7 +429,7 @@ class dml:
 
     def snapshot(self,  pv_uri_list: list[str], handler: Callable[[str, dict], None])->str:
         """ Perform the snapshot operation
-        return the id to be used to match the snapthot returned in the hanlder
+        return the id to be used to match the snapthot returned asynchronously in the hanlder
         """
         #check if all the pv are wellformed
         self._check_pv_list(pv_uri_list)
@@ -438,11 +439,37 @@ class dml:
             self.reply_snapsthot_message[new_reply_id] = Snapshot(handler=handler)
 
             # send message to k2eg fto execute snapshot
-            self.__broker.send_start_monitor_command_many(
+            self.__broker.send_snapshot_command(
                 pv_uri_list,
                 new_reply_id,
             )
         return new_reply_id
+
+    def snapshot_sync(self,  pv_uri_list: list[str], timeout: float = 10)->list[dict[str, Any]]:
+        """ Perform the snapshot operation
+        return the snapshot value synchronously
+        """
+        snapshot_id = None
+        received_snapshot = None
+        #check if all the pv are wellformed
+        def internal_snapshot_handler(id, snapshot_data):
+            nonlocal snapshot_id
+            nonlocal received_snapshot
+            if snapshot_id == id:
+                received_snapshot = snapshot_data
+        snapshot_id = self.snapshot(pv_uri_list, internal_snapshot_handler)     
+        # wait for received_snapshot isnot None of timeout expired
+        
+        while(received_snapshot is None):
+            # wait some millisecondos on this thread
+            sleep(0.03)
+            if timeout is not None:
+                timeout = timeout - 0.3
+                if timeout <= 0:
+                    raise OperationTimeout(
+                        f"Timeout during snapshot operation for {pv_uri_list}"
+                    )
+        return {'error' : 0, "snapshot": received_snapshot}
 
     def close(self):
         # signal thread to terminate

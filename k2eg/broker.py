@@ -333,7 +333,7 @@ class Broker:
 
     def send_snapshot_command(self, pv_uri_list:list[str], reply_id:str):
         snapshot_value_json_msg = {
-            "command": "multi-monitor",
+            "command": "snapshot",
             "serialization": "msgpack",
             "pv_name_list": pv_uri_list,
             "reply_topic": self.__reply_topic,

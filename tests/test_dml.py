@@ -181,5 +181,38 @@ def test_put_wrong_device_timeout():
     with pytest.raises(k2eg.OperationError):
                     k.put("pva://bad:pv:name", 0)
 
-def snapshot_on_simple_fixed_pv(key, value):
-    pass
+def test_snapshot_on_simple_fixed_pv():
+    retry = 0
+    snapshot_id = None
+    received_snapshot = None
+    def snapshot_handler(id, snapshot_data):
+        nonlocal snapshot_id
+        nonlocal received_snapshot
+        if snapshot_id == id:
+            received_snapshot = snapshot_data
+
+    try:
+        snapshot_id = k.snapshot(['pva://variable:a', 'pva://variable:b'], snapshot_handler)
+        while (received_snapshot is None ) and retry < 3:
+            retry = retry+1
+            time.sleep(2)
+        # received_snapshot shuld be a dict with the snapshot data
+        assert isinstance(received_snapshot, list), "value should be a list"
+        assert received_snapshot[0]['variable:a'] is not None, "value should not be None"
+        assert received_snapshot[1]['variable:b'] is not None, "value should not be None"
+    except Exception as e:
+        assert False, f"An error occured: {e}"
+
+def test_snapshot_on_simple_fixed_pv_sync():
+    try:
+        received_snapshot = k.snapshot_sync(['pva://variable:a', 'pva://variable:b'])
+        # received_snapshot shuld be a dict with the snapshot data
+        assert isinstance(received_snapshot, dict), "value should be a list"
+        assert "error" in received_snapshot, "error should be in the snapshot"
+        assert received_snapshot['error'] == 0, "error should be 0"
+        assert "snapshot" in received_snapshot, "snapshot should be in the snapshot"
+        assert isinstance(received_snapshot['snapshot'], list), "value should be a list"
+        assert received_snapshot['snapshot'][0]['variable:a'] is not None, "value should not be None"
+        assert received_snapshot['snapshot'][1]['variable:b'] is not None, "value should not be None"
+    except Exception as e:
+        assert False, f"An error occured: {e}"

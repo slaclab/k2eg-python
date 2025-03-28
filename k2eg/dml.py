@@ -172,6 +172,25 @@ class dml:
                                     msg_id,
                                     decoded_message[msg_id]
                                 )
+                        elif msg_id in self.reply_snapsthot_message:
+                            # if the message is not a reply and not a monitor
+                            # it should be a snapshot
+                            snapshot = self.reply_snapsthot_message[msg_id]
+                            # check if the message is a snapshot completion error == 1
+                            if decoded_message.get('error', 0) == 0:
+                                # the message contains a snapshot value
+                                snapshot.results.append(decoded_message)
+                            else:
+                                # we got the completion message so             
+                                # remove the snapshot from the list
+                                del self.reply_snapsthot_message[msg_id]
+                                # and call async handler in another thread
+                                executor.submit(
+                                    snapshot.handler,
+                                    msg_id,
+                                    snapshot.results
+                                )
+
 
     def parse_pv_url(self, pv_url):
         protocol, pv_name = _filter_pv_uri(pv_url)

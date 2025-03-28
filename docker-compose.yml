@@ -32,7 +32,7 @@ services:
           tmux new-session -d "source /opt/epics-var.sh; softIocPVA -d /db/softioc.db"
           tail -f /dev/null
     volumes:
-      - tests/epics-test.db:/db/softioc.db
+      - ./tests/epics-test.db:/db/softioc.db
   k2eg:
     image: ghcr.io/slaclab/k2eg/ubuntu:latest
     pull_policy: always

@@ -3,11 +3,13 @@ import uuid
 import msgpack
 import logging
 import threading
+from time import sleep
 from readerwriterlock import rwlock
 from confluent_kafka import KafkaError
-from typing import Callable
 from k2eg.broker import Broker
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Callable, List, Dict, Any
 
 _protocol_regex = r"^(pva?|ca)://((?:[A-Za-z0-9-_:]+(?:\.[A-Za-z0-9-_]+)*))$"
 
@@ -30,6 +32,13 @@ class OperationError(Exception):
         # Call the base class constructor with the parameters it needs
         super().__init__(message)
         self.error = error
+
+@dataclass
+class Snapshot:
+    # The callback function to process or notify snapshot updates.
+    handler: Callable[[str, Dict[str, Any]], None]
+    # A list to store snapshot results; each result can be a dict with relevant data.
+    results: List[Dict[str, Any]] = field(default_factory=list)
 
 class dml:
     """K2EG client"""
@@ -58,7 +67,8 @@ class dml:
         self.reply_wait_condition = threading.Condition()
         self.reply_ready_event = threading.Event()
         self.reply_message = {}
-
+        #contain a vector for each reply id where snapshot are stored
+        self.reply_snapsthot_message = {}
 
     def __del__(self):
         # Perform cleanup operations when the instance is deleted
@@ -162,6 +172,25 @@ class dml:
                                     msg_id,
                                     decoded_message[msg_id]
                                 )
+                        elif msg_id in self.reply_snapsthot_message:
+                            # if the message is not a reply and not a monitor
+                            # it should be a snapshot
+                            snapshot = self.reply_snapsthot_message[msg_id]
+                            # check if the message is a snapshot completion error == 1
+                            if decoded_message.get('error', 0) == 0:
+                                # the message contains a snapshot value
+                                snapshot.results.append(decoded_message)
+                            else:
+                                # we got the completion message so             
+                                # remove the snapshot from the list
+                                del self.reply_snapsthot_message[msg_id]
+                                # and call async handler in another thread
+                                executor.submit(
+                                    snapshot.handler,
+                                    msg_id,
+                                    snapshot.results
+                                )
+
 
     def parse_pv_url(self, pv_url):
         protocol, pv_name = _filter_pv_uri(pv_url)
@@ -174,6 +203,12 @@ class dml:
     def __check_pv_name(self, pv_url):
         pass
 
+    def _check_pv_list(self, pv_uri_list: list[str]):
+        for pv_uri in pv_uri_list:
+            protocol, pv_name = self.parse_pv_url(pv_uri)
+            if protocol.lower() not in ("pva", "ca"):
+                raise ValueError("The protocol need to be one of 'pva'  'ca'")
+            
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
@@ -339,10 +374,7 @@ class dml:
                 False: otherwhise
         """
         fetched = False
-        for pv_uri in pv_uri_list:
-            protocol, pv_name = self.parse_pv_url(pv_uri)
-            if protocol.lower() not in ("pva", "ca"):
-                raise ValueError("The protocol need to be one of 'pva'  'ca'")
+        self._check_pv_list(pv_uri_list)
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
             filtered_list_pv_uri = []
@@ -393,6 +425,50 @@ class dml:
             # all is gone ok i can register the handler and subscribe
             del self.__monitor_pv_handler[pv_name]
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
+
+    def snapshot(self,  pv_uri_list: list[str], handler: Callable[[str, dict], None])->str:
+        """ Perform the snapshot operation
+        return the id to be used to match the snapthot returned asynchronously in the hanlder
+        """
+        #check if all the pv are wellformed
+        self._check_pv_list(pv_uri_list)
+        new_reply_id = str(uuid.uuid1())
+        with self.reply_wait_condition:
+            # Set the snapshot handler and initialize the snapshot results vector
+            self.reply_snapsthot_message[new_reply_id] = Snapshot(handler=handler)
+
+            # send message to k2eg fto execute snapshot
+            self.__broker.send_snapshot_command(
+                pv_uri_list,
+                new_reply_id,
+            )
+        return new_reply_id
+
+    def snapshot_sync(self,  pv_uri_list: list[str], timeout: float = 10)->list[dict[str, Any]]:
+        """ Perform the snapshot operation
+        return the snapshot value synchronously
+        """
+        snapshot_id = None
+        received_snapshot = None
+        #check if all the pv are wellformed
+        def internal_snapshot_handler(id, snapshot_data):
+            nonlocal snapshot_id
+            nonlocal received_snapshot
+            if snapshot_id == id:
+                received_snapshot = snapshot_data
+        snapshot_id = self.snapshot(pv_uri_list, internal_snapshot_handler)     
+        # wait for received_snapshot isnot None of timeout expired
+        
+        while(received_snapshot is None):
+            # wait some millisecondos on this thread
+            sleep(0.03)
+            if timeout is not None:
+                timeout = timeout - 0.3
+                if timeout <= 0:
+                    raise OperationTimeout(
+                        f"Timeout during snapshot operation for {pv_uri_list}"
+                    )
+        return {'error' : 0, "snapshot": received_snapshot}
 
     def close(self):
         # signal thread to terminate

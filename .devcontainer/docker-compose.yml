@@ -28,7 +28,15 @@ services:
     # (Adding the "ports" property to this file will not forward from a Codespace.)
 
   epics_pva:
-    image: ghcr.io/bisegni/epics-base-docker-image:main
+    build:
+      context: ../
+      dockerfile: .devcontainer/DockerfileDevContainer.epics
+    command: 
+        - /bin/bash
+        - -c
+        - |
+          tmux new-session -d "source /opt/epics-var.sh; softIocPVA -d /db/softioc.db"
+          tail -f /dev/null
     volumes:
       - ../tests/epics-test.db:/db/softioc.db
 

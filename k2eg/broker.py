@@ -331,6 +331,16 @@ class Broker:
         }
         self.send_command(json.dumps(put_value_json_msg))   
 
+    def send_snapshot_command(self, pv_uri_list:list[str], reply_id:str):
+        snapshot_value_json_msg = {
+            "command": "snapshot",
+            "serialization": "msgpack",
+            "pv_name_list": pv_uri_list,
+            "reply_topic": self.__reply_topic,
+            "reply_id": reply_id
+        }
+        self.send_command(json.dumps(snapshot_value_json_msg))  
+
     def initialized(self):
         if not self.self.__initialized:
             raise 

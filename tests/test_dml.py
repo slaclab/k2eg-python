@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 from uuid import uuid1
 import k2eg
+from k2eg.broker import SnapshotProperties
 from k2eg.dml import _filter_pv_uri
 import time
 import pytest
@@ -217,3 +218,43 @@ def test_snapshot_on_simple_fixed_pv_sync():
         assert received_snapshot['snapshot'][1]['variable:b'] is not None, "value should not be None"
     except Exception as e:
         assert False, f"An error occured: {e}"
+        
+def test_recurring_snapshot():
+    retry = 0
+    snapshot_id = None
+    received_snapshot = None
+    def snapshot_handler(id, snapshot_data):
+        nonlocal snapshot_id
+        nonlocal received_snapshot
+        if snapshot_id == id:
+            received_snapshot = snapshot_data
+            
+    try:
+        result = k.snapshot_recurring(
+            SnapshotProperties(
+                snapshot_name = "snap_1",
+                time_window = 1000,
+                repeat_delay = 0,
+                pv_uri_list = ['pva://variable:a', 'pva://variable:b'],
+                triggered=False,
+            ),
+            handler=snapshot_handler,
+            timeout=10,
+        )
+        print(result)
+        while (received_snapshot is None ) and retry < 3:
+            retry = retry+1
+            time.sleep(2)
+        # received_snapshot shuld be a dict with the snapshot data
+        assert isinstance(received_snapshot, dict), "value should be a list"
+        assert "error" in received_snapshot, "error should be in the snapshot"
+        assert received_snapshot['error'] == 0, "error should be 0"
+        assert "snapshot" in received_snapshot, "snapshot should be in the snapshot"
+        assert isinstance(received_snapshot['snapshot'], list), "value should be a list"
+        assert received_snapshot['snapshot'][0]['variable:a'] is not None, "value should not be None"
+        assert received_snapshot['snapshot'][1]['variable:b'] is not None, "value should not be None"
+    except Exception as e:
+        assert False, f"An error occured: {e}"
+    finally:
+        k.stop_recurring_snapshot("snap_1")
+        time.sleep(1)

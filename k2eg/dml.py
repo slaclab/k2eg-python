@@ -3,10 +3,12 @@ import uuid
 import msgpack
 import logging
 import threading
+import datetime
+from enum import Enum
 from time import sleep
 from readerwriterlock import rwlock
 from confluent_kafka import KafkaError
-from k2eg.broker import Broker
+from k2eg.broker import Broker, SnapshotProperties
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, List, Dict, Any
@@ -33,11 +35,18 @@ class OperationError(Exception):
         super().__init__(message)
         self.error = error
 
+class SnapshotState(Enum):
+    INITIALIZED = 0
+    HEADER_RECEVED = 1
+    DATA_ACQUIRING = 2
+    TAIL_RECEIVED = 3
+
 @dataclass
 class Snapshot:
-    # The callback function to process or notify snapshot updates.
     handler: Callable[[str, Dict[str, Any]], None]
-    # A list to store snapshot results; each result can be a dict with relevant data.
+    state: SnapshotState = SnapshotState.INITIALIZED 
+    timestamp: datetime.datetime = None
+    interation: int = 0
     results: List[Dict[str, Any]] = field(default_factory=list)
 
 class dml:
@@ -69,6 +78,7 @@ class dml:
         self.reply_message = {}
         #contain a vector for each reply id where snapshot are stored
         self.reply_snapsthot_message = {}
+        self.reply_recurring_snapsthot_message = {}
 
     def __del__(self):
         # Perform cleanup operations when the instance is deleted
@@ -86,6 +96,9 @@ class dml:
         
         if 'reply_id' in decodec_msg:
             msg_id = decodec_msg['reply_id']
+            converted_msg = decodec_msg
+        elif 'snapshot_name' in decodec_msg:
+            msg_id = decodec_msg['snapshot_name']
             converted_msg = decodec_msg
         else:
             msg_id = list(decodec_msg.keys())[0]
@@ -190,6 +203,37 @@ class dml:
                                     msg_id,
                                     snapshot.results
                                 )
+                        elif msg_id in self.reply_recurring_snapsthot_message:
+                            # iit should be a recurring snapshot
+                            snapshot = self.reply_recurring_snapsthot_message[msg_id]
+                            message_type = decoded_message.get('message-type', None)
+                            if message_type == None: continue
+                            
+                            if message_type == 0 and snapshot.state == SnapshotState.INITIALIZED:
+                                snapshot.state = SnapshotState.HEADER_RECEVED
+                                #get the timestsamp and iteration
+                                snapshot.timestamp = decoded_message.get('timestamp', None)
+                                snapshot.interation = decoded_message.get('iter_index', 0)
+                            elif message_type == 1 and (snapshot.state  == SnapshotState.HEADER_RECEVED or snapshot.state  == SnapshotState.DATA_ACQUIRING):
+                                ## we are acquireing data for the snapshtot
+                                snapshot.state  == SnapshotState.DATA_ACQUIRING
+                                snapshot.results.append(decoded_message)
+                            elif message_type == 2 and (snapshot.state == SnapshotState.HEADER_RECEVED or napshot.state == SnapshotState.DATA_ACQUIRING):
+                                    # we got the completion message on snpahsot that we are managing         
+                                    # renew the snapshtot
+                                    self.reply_recurring_snapsthot_message[msg_id] = Snapshot(handler=snapshot.handler)
+                                    # and call async handler in another thread
+                                    executor.submit(
+                                        snapshot.handler,
+                                        msg_id,
+                                        snapshot.results
+                                    )
+                            else:
+                                #log the error
+                                logging.error(
+                                    f"Error during snapshot {msg_id} with message type {message_type}"
+                                )
+
 
 
     def parse_pv_url(self, pv_url):
@@ -212,7 +256,7 @@ class dml:
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
-    def _validate_snapshot_name(snapshot_name: str) -> None:
+    def _validate_snapshot_name(self, snapshot_name: str) -> None:
         """
         Validate the snapshot name. Only alphanumeric characters, dashes, and underscores are allowed.
 
@@ -227,7 +271,7 @@ class dml:
                 f"Invalid snapshot name '{snapshot_name}'. Only alphanumeric characters, dashes, and underscores are allowed."
             )
 
-    def __wait_for_reply(self, new_reply_id, timeout) -> (int, any):
+    def __wait_for_reply(self, new_reply_id, timeout) -> tuple[int, any]:
         #with self.reply_wait_condition:
         got_it = self.reply_wait_condition.wait_for(
             lambda: new_reply_id in self.reply_message and self.reply_message[new_reply_id] is not None,
@@ -459,7 +503,7 @@ class dml:
             )
         return new_reply_id
     
-    def snapshot_recurring(self,  snapshot_name:str, pv_uri_list: list[str], handler: Callable[[str, dict], None], timeout: float = None)->str:
+    def snapshot_recurring(self,  properties: SnapshotProperties, handler: Callable[[str, dict], None], timeout: float = None):
         """
         Create a new recurring snapshot for a list of process variables (PVs).
 
@@ -496,16 +540,16 @@ class dml:
             )
         """
         #check if all the pv are wellformed
-        self._check_pv_list(pv_uri_list)
-        self._validate_snapshot_name(snapshot_name)
+        self._check_pv_list(properties.pv_uri_list)
+        self._validate_snapshot_name(properties.snapshot_name)
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
             # Set the snapshot handler and initialize the snapshot results vector
-            self.reply_snapsthot_message[snapshot_name] = Snapshot(handler=handler)
+            self.reply_recurring_snapsthot_message[properties.snapshot_name] = Snapshot(handler=handler)
 
             # send message to k2eg fto execute snapshot
-            self.__broker.send_snapshot_command(
-                pv_uri_list,
+            self.__broker.send_repeating_snapshot_command(
+                properties,
                 new_reply_id,
             )
 
@@ -514,28 +558,66 @@ class dml:
                 if op_res == -2:
                     # raise timeout exception
                     raise OperationTimeout(
-                            f"Timeout during start monitor operation for {pv_name}"
+                            f"Timeout during the submition of snapshot {properties.snapshot_name}"
                             )
                 elif op_res == -1:
                     continue
                 else:
-                    return "ok"
-                    # all is gone ok i can register the handler and subscribe
-                    # for pv_uri in filtered_list_pv_uri:
-                    #     protocol, pv_name = self.parse_pv_url(pv_uri)
-                    #     self.__monitor_pv_handler[pv_name] = handler
-                    #     self.__broker.add_topic(self.__normalize_pv_name(pv_name))
-                    # return result
+                    return result
 
-    def snapshost_trigger(self, snapshot_id: str):
+    def snapshost_trigger(self, snapshot_name: str, timeout: float = None):
         """ Trigger a new publishing of a specific snapshot
         """
-        pass
+        self._validate_snapshot_name(snapshot_name)
+        new_reply_id = str(uuid.uuid1())
+        with self.reply_wait_condition:
+            # Set the snapshot handler and initialize the snapshot results vector
+            del self.reply_recurring_snapsthot_message[snapshot_name]
 
-    def snapshot_stop(self, snapshot_id: str):
+            # send message to k2eg fto execute snapshot
+            self.__broker.send_repeating_snapshot_trigger_command(
+                snapshot_name,
+                new_reply_id,
+            )
+
+            while(True):
+                op_res, result =  self.__wait_for_reply(new_reply_id, timeout)
+                if op_res == -2:
+                    # raise timeout exception
+                    raise OperationTimeout(
+                            f"Timeout during triggering the snapshot {snapshot_name}"
+                            )
+                elif op_res == -1:
+                    continue
+                else:
+                    return result
+
+    def snapshot_stop(self, snapshot_name: str, timeout: float = None):
         """ Stop the snapshot operation
         """
-        pass
+        self._validate_snapshot_name(snapshot_name)
+        new_reply_id = str(uuid.uuid1())
+        with self.reply_wait_condition:
+            # Set the snapshot handler and initialize the snapshot results vector
+            del self.reply_recurring_snapsthot_message[snapshot_name]
+
+            # send message to k2eg fto execute snapshot
+            self.__broker.send_repeating_snapshot_stop_command(
+                snapshot_name,
+                new_reply_id,
+            )
+
+            while(True):
+                op_res, result =  self.__wait_for_reply(new_reply_id, timeout)
+                if op_res == -2:
+                    # raise timeout exception
+                    raise OperationTimeout(
+                            f"Timeout stopping the snapshot {snapshot_name}"
+                            )
+                elif op_res == -1:
+                    continue
+                else:
+                    return result
 
     def snapshot_sync(self,  pv_uri_list: list[str], timeout: float = 10)->list[dict[str, Any]]:
         """ Perform the snapshot operation

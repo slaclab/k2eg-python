@@ -15,13 +15,17 @@ class SnapshotProperties:
     """
     Class to manage the snapshot properties
     """
+    # The name of the snapshot
     snapshot_name:str = None
-    pv_uri_list:list[str] = None
     # The time window for the snapshot
     time_window: int = 1000
     # The delay between snapshots
     repeat_delay: int = 0
+    # Define if a snapshot need to be automatically or manually triggered
     triggered: bool = False
+    # The list of PV URIs to snapshot
+    pv_uri_list:list[str] = None
+    
     def validate(self):
         """
         Validate the snapshot properties.

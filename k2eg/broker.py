@@ -1,12 +1,50 @@
+from dataclasses import dataclass
 import datetime
 import json
 import os
 import logging
+import re
 import threading
 import configparser
 import time
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END, OFFSET_BEGINNING
 from confluent_kafka import KafkaError, KafkaException
+
+@dataclass
+class SnapshotProperties:
+    """
+    Class to manage the snapshot properties
+    """
+    snapshot_name:str = None
+    pv_uri_list:list[str] = None
+    # The time window for the snapshot
+    time_window: int = 1000
+    # The delay between snapshots
+    repeat_delay: int = 0
+    triggered: bool = False
+    def validate(self):
+        """
+        Validate the snapshot properties.
+
+        Raises:
+            ValueError: If any property is invalid.
+        """
+        if not self.snapshot_name or not isinstance(self.snapshot_name, str):
+            raise ValueError("snapshot_name must be a non-empty string.")
+        if not re.match(r'^[A-Za-z0-9_\-]+$', self.snapshot_name):
+            raise ValueError(
+                f"Invalid snapshot name '{self.snapshot_name}'. Only alphanumeric characters, dashes, and underscores are allowed."
+            )
+        if not self.pv_uri_list or not isinstance(self.pv_uri_list, list):
+            raise ValueError("pv_uri_list must be a non-empty list of PV URIs.")
+        if not all(isinstance(pv, str) for pv in self.pv_uri_list):
+            raise ValueError("All PV URIs in pv_uri_list must be strings.")
+        if not isinstance(self.time_window, int) or self.time_window < 0:
+            raise ValueError("time_window must be a non-negative integer.")
+        if not isinstance(self.repeat_delay, int) or self.repeat_delay < 0:
+            raise ValueError("repeat_delay must be a non-negative integer.")
+        if not isinstance(self.triggered, bool):
+            raise ValueError("triggered must be a boolean value.")
 
 class TopicUnknown(Exception):
     """Exception raised when the timeout is expired on operation"""
@@ -286,18 +324,18 @@ class Broker:
         self.__producer.flush()
 
     def send_get_command(self, pv_uri, reply_id):
-        get_json_msg = {
+        json_msg = {
             "command": "get",
             "serialization": "msgpack",
             "pv_name": pv_uri,
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id
         }
-        self.send_command(json.dumps(get_json_msg))
+        self.send_command(json.dumps(json_msg))
 
     def send_start_monitor_command(self, pv_uri, pv_reply_topic, reply_id):
         # send command
-        monitor_json_msg = {
+        json_msg = {
             "command": "monitor",
             "serialization": "msgpack",
             "pv_name": pv_uri,
@@ -306,11 +344,11 @@ class Broker:
             "reply_id": reply_id,
             "monitor_dest_topic": pv_reply_topic
         }
-        self.send_command(json.dumps(monitor_json_msg))    
+        self.send_command(json.dumps(json_msg))    
     
     def send_start_monitor_command_many(self, pv_uri_list, reply_id):
         # send command
-        monitor_json_msg = {
+        json_msg = {
             "command": "multi-monitor",
             "serialization": "msgpack",
             "activate": True,
@@ -318,10 +356,10 @@ class Broker:
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id
         }
-        self.send_command(json.dumps(monitor_json_msg))  
+        self.send_command(json.dumps(json_msg))  
 
     def send_put_command(self, pv_uri: str, value: any, reply_id: str):
-        put_value_json_msg = {
+        json_msg = {
             "command": "put",
             "pv_name": pv_uri,
             "value": str(value),
@@ -329,17 +367,55 @@ class Broker:
             "reply_id": reply_id,
             "serialization": "msgpack"
         }
-        self.send_command(json.dumps(put_value_json_msg))   
+        self.send_command(json.dumps(json_msg))   
 
     def send_snapshot_command(self, pv_uri_list:list[str], reply_id:str):
-        snapshot_value_json_msg = {
+        json_msg = {
             "command": "snapshot",
             "serialization": "msgpack",
             "pv_name_list": pv_uri_list,
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id
         }
-        self.send_command(json.dumps(snapshot_value_json_msg))  
+        self.send_command(json.dumps(json_msg))  
+
+    def send_repeating_snapshot_command(self, properties:SnapshotProperties, reply_id:str):
+        #validate properties
+        properties.validate()
+        json_msg = {
+            "command": "snapshot-repeating",
+            "serialization": "msgpack",
+            "reply_topic": self.__reply_topic,
+            "reply_id": reply_id,
+            "snapshot_name": properties.snapshot_name,
+            "pv_name_list": properties.pv_uri_list,
+            "repeat_delay_msec": properties.repeat_delay,
+            "time_window_msec": properties.time_window,
+            "triggered": properties.triggered
+        }
+        self.send_command(json.dumps(json_msg))  
+    
+    def send_repeating_snapshot_trigger_command(self, snapshot_name:str, reply_id:str):
+        #validate properties
+        json_msg = {
+            "command": "snapshot-repeating-stop",
+            "serialization": "msgpack",
+            "reply_topic": self.__reply_topic,
+            "reply_id": reply_id,
+            "snapshot_name": snapshot_name,
+        }
+        self.send_command(json.dumps(json_msg)) 
+    
+    def send_repeating_snapshot_stop_command(self, snapshot_name:str, reply_id:str):
+        #validate properties
+        json_msg = {
+            "command": "snapshot-repeating-stop",
+            "serialization": "msgpack",
+            "reply_topic": self.__reply_topic,
+            "reply_id": reply_id,
+            "snapshot_name": snapshot_name,
+        }
+        self.send_command(json.dumps(json_msg)) 
 
     def initialized(self):
         if not self.self.__initialized:

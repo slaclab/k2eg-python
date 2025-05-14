@@ -212,6 +212,21 @@ class dml:
     def __normalize_pv_name(self, pv_name):
         return pv_name.replace(":", "_")
 
+    def _validate_snapshot_name(snapshot_name: str) -> None:
+        """
+        Validate the snapshot name. Only alphanumeric characters, dashes, and underscores are allowed.
+
+        Args:
+            snapshot_name (str): The snapshot name to validate.
+
+        Raises:
+            ValueError: If the snapshot name contains invalid characters.
+        """
+        if not re.match(r'^[A-Za-z0-9_\-]+$', snapshot_name):
+            raise ValueError(
+                f"Invalid snapshot name '{snapshot_name}'. Only alphanumeric characters, dashes, and underscores are allowed."
+            )
+
     def __wait_for_reply(self, new_reply_id, timeout) -> (int, any):
         #with self.reply_wait_condition:
         got_it = self.reply_wait_condition.wait_for(
@@ -427,7 +442,7 @@ class dml:
             self.__broker.remove_topic(self.__normalize_pv_name(pv_name))
 
     def snapshot(self,  pv_uri_list: list[str], handler: Callable[[str, dict], None])->str:
-        """ Perform the snapshot operation
+        """ Perform the snapshot creation
         return the id to be used to match the snapthot returned asynchronously in the hanlder
         """
         #check if all the pv are wellformed
@@ -443,6 +458,84 @@ class dml:
                 new_reply_id,
             )
         return new_reply_id
+    
+    def snapshot_recurring(self,  snapshot_name:str, pv_uri_list: list[str], handler: Callable[[str, dict], None], timeout: float = None)->str:
+        """
+        Create a new recurring snapshot for a list of process variables (PVs).
+
+        This method initiates a recurring snapshot operation for the specified PVs.
+        It registers a handler to be called asynchronously when snapshot data is available.
+        The method blocks until the snapshot is created and an acknowledgment is received from the server,
+        or until the specified timeout is reached.
+
+        Args:
+            snapshot_name (str): The name to assign to the recurring snapshot.
+            pv_uri_list (list[str]): List of PV URIs to include in the snapshot.
+            handler (Callable[[str, dict], None]): Callback function to handle snapshot results.
+                The handler receives the snapshot ID and a dictionary containing the snapshot data.
+            timeout (float, optional): Maximum time to wait for the server acknowledgment, in seconds.
+                If None, waits indefinitely.
+
+        Returns:
+            str: "ok" if the snapshot is successfully created and acknowledged.
+
+        Raises:
+            ValueError: If any PV URI is not well-formed or uses an unsupported protocol.
+            OperationTimeout: If the operation times out before receiving an acknowledgment.
+            OperationError: If the server returns an error during snapshot creation.
+
+        Example:
+            def my_handler(snapshot_id, data):
+                print(f"Snapshot {snapshot_id} data: {data}")
+
+            dml_instance.snapshot_recurring(
+                "my_snapshot",
+                ["pva://my:pv1", "ca://my:pv2"],
+                my_handler,
+                timeout=5.0
+            )
+        """
+        #check if all the pv are wellformed
+        self._check_pv_list(pv_uri_list)
+        self._validate_snapshot_name(snapshot_name)
+        new_reply_id = str(uuid.uuid1())
+        with self.reply_wait_condition:
+            # Set the snapshot handler and initialize the snapshot results vector
+            self.reply_snapsthot_message[snapshot_name] = Snapshot(handler=handler)
+
+            # send message to k2eg fto execute snapshot
+            self.__broker.send_snapshot_command(
+                pv_uri_list,
+                new_reply_id,
+            )
+
+            while(True):
+                op_res, result =  self.__wait_for_reply(new_reply_id, timeout)
+                if op_res == -2:
+                    # raise timeout exception
+                    raise OperationTimeout(
+                            f"Timeout during start monitor operation for {pv_name}"
+                            )
+                elif op_res == -1:
+                    continue
+                else:
+                    return "ok"
+                    # all is gone ok i can register the handler and subscribe
+                    # for pv_uri in filtered_list_pv_uri:
+                    #     protocol, pv_name = self.parse_pv_url(pv_uri)
+                    #     self.__monitor_pv_handler[pv_name] = handler
+                    #     self.__broker.add_topic(self.__normalize_pv_name(pv_name))
+                    # return result
+
+    def snapshost_trigger(self, snapshot_id: str):
+        """ Trigger a new publishing of a specific snapshot
+        """
+        pass
+
+    def snapshot_stop(self, snapshot_id: str):
+        """ Stop the snapshot operation
+        """
+        pass
 
     def snapshot_sync(self,  pv_uri_list: list[str], timeout: float = 10)->list[dict[str, Any]]:
         """ Perform the snapshot operation

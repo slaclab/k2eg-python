@@ -247,7 +247,7 @@ def test_recurring_snapshot():
         print(result)
         while (received_snapshot is None ) and retry < 3:
             retry = retry+1
-            time.sleep(2)
+            time.sleep(5)
         k.snapshot_stop(snapshot_name)
         time.sleep(1)
         # received_snapshot shuld be a dict with the snapshot data

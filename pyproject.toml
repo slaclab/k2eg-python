@@ -31,3 +31,7 @@ dependencies = [
 
 [project.scripts]
 k2eg = "k2eg.cli.__main__:cli"
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "DEBUG"

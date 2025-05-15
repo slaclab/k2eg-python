@@ -3,7 +3,7 @@ import logging
 from uuid import uuid1
 import k2eg
 from k2eg.broker import SnapshotProperties
-from k2eg.dml import _filter_pv_uri
+from k2eg.dml import Snapshot, SnapshotState, _filter_pv_uri
 import time
 import pytest
 from unittest import TestCase
@@ -221,20 +221,21 @@ def test_snapshot_on_simple_fixed_pv_sync():
         
 def test_recurring_snapshot():
     retry = 0
-    snapshot_id = None
-    received_snapshot = None
-    def snapshot_handler(id, snapshot_data):
-        nonlocal snapshot_id
+    snapstho_name = "snap_1"
+    received_snapshot:Snapshot = None
+    def snapshot_handler(id, snapshot_data:Snapshot):
+        nonlocal snapstho_name
         nonlocal received_snapshot
-        if snapshot_id == id:
+        if snapstho_name == id:
             received_snapshot = snapshot_data
             
     try:
-        result = k.snapshot_stop("snap_1")
+        result = k.snapshot_stop(snapstho_name)
         print(result)
+        time.sleep(1)
         result = k.snapshot_recurring(
             SnapshotProperties(
-                snapshot_name = "snap_1",
+                snapshot_name = snapstho_name,
                 time_window = 1000,
                 repeat_delay = 0,
                 pv_uri_list = ['pva://variable:a', 'pva://variable:b'],
@@ -247,16 +248,16 @@ def test_recurring_snapshot():
         while (received_snapshot is None ) and retry < 3:
             retry = retry+1
             time.sleep(2)
+        k.snapshot_stop("snap_1")
+        time.sleep(1)
         # received_snapshot shuld be a dict with the snapshot data
-        assert isinstance(received_snapshot, dict), "value should be a list"
-        assert "error" in received_snapshot, "error should be in the snapshot"
-        assert received_snapshot['error'] == 0, "error should be 0"
-        assert "snapshot" in received_snapshot, "snapshot should be in the snapshot"
-        assert isinstance(received_snapshot['snapshot'], list), "value should be a list"
-        assert received_snapshot['snapshot'][0]['variable:a'] is not None, "value should not be None"
-        assert received_snapshot['snapshot'][1]['variable:b'] is not None, "value should not be None"
+        assert received_snapshot.state == SnapshotState.TAIL_RECEIVED, "state should be TAIL_RECEIVED"
+        assert received_snapshot.timestamp > 0, "timestamp should be valid"
+        assert received_snapshot.interation > 0, "interation should be valid"
+        assert isinstance(received_snapshot.results, list), "results should be a list"
+        assert len(received_snapshot.results) == 2, "results should be a list of 2"
     except Exception as e:
         assert False, f"An error occured: {e}"
     finally:
-        k.stop_recurring_snapshot("snap_1")
+        k.snapshot_stop("snap_1")
         time.sleep(1)

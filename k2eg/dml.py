@@ -167,6 +167,7 @@ class dml:
                         continue
                 else:
                     was_a_reply = False
+                    from_topic = message.topic()
                     #msg_id could be a reply id or pv name
                     msg_id, decoded_message = self.__decode_message(message)
                     if msg_id is None or decoded_message is None:
@@ -203,12 +204,11 @@ class dml:
                                     msg_id,
                                     snapshot.results
                                 )
-                        elif msg_id in self.reply_recurring_snapsthot_message:
+                        elif from_topic in self.reply_recurring_snapsthot_message:
                             # iit should be a recurring snapshot
-                            snapshot = self.reply_recurring_snapsthot_message[msg_id]
-                            message_type = decoded_message.get('message-type', None)
+                            snapshot = self.reply_recurring_snapsthot_message[from_topic]
+                            message_type = decoded_message.get('message_type', None)
                             if message_type == None: continue
-                            
                             if message_type == 0 and snapshot.state == SnapshotState.INITIALIZED:
                                 snapshot.state = SnapshotState.HEADER_RECEVED
                                 #get the timestsamp and iteration
@@ -218,16 +218,19 @@ class dml:
                                 ## we are acquireing data for the snapshtot
                                 snapshot.state  == SnapshotState.DATA_ACQUIRING
                                 snapshot.results.append(decoded_message)
-                            elif message_type == 2 and (snapshot.state == SnapshotState.HEADER_RECEVED or napshot.state == SnapshotState.DATA_ACQUIRING):
+                            elif message_type == 2 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
                                     # we got the completion message on snpahsot that we are managing         
                                     # renew the snapshtot
-                                    self.reply_recurring_snapsthot_message[msg_id] = Snapshot(handler=snapshot.handler)
+                                    snapshot.state = SnapshotState.TAIL_RECEIVED
+                                    logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}]")  
+                                    self.reply_recurring_snapsthot_message[from_topic] = Snapshot(handler=snapshot.handler)
                                     # and call async handler in another thread
                                     executor.submit(
                                         snapshot.handler,
                                         msg_id,
-                                        snapshot.results
+                                        snapshot
                                     )
+                                    
                             else:
                                 #log the error
                                 logging.error(
@@ -503,7 +506,7 @@ class dml:
             )
         return new_reply_id
     
-    def snapshot_recurring(self,  properties: SnapshotProperties, handler: Callable[[str, dict], None], timeout: float = None):
+    def snapshot_recurring(self,  properties: SnapshotProperties, handler: Callable[[str, Snapshot], None], timeout: float = None):
         """
         Create a new recurring snapshot for a list of process variables (PVs).
 
@@ -546,8 +549,6 @@ class dml:
         with self.reply_wait_condition:
             # init reply slot
             self.reply_message[new_reply_id] = None
-            # Set the snapshot handler and initialize the snapshot results vector
-            self.reply_recurring_snapsthot_message[properties.snapshot_name] = Snapshot(handler=handler)
 
             # send message to k2eg fto execute snapshot
             self.__broker.send_repeating_snapshot_command(
@@ -565,6 +566,17 @@ class dml:
                 elif op_res == -1:
                     continue
                 else:
+                    #at this point we need to start listening to the right topic
+                    if "publishing_topic" in result:
+                         # Set the snapshot handler and initialize the snapshot results vector
+                        p_topic = result["publishing_topic"]
+                        self.reply_recurring_snapsthot_message[p_topic] = Snapshot(handler=handler)
+                        self.reply_recurring_snapsthot_message[p_topic].publushing_topic = result["publishing_topic"]
+                        self.__broker.add_topic(p_topic)
+                        logging.info(
+                            f"Recurring snapshot {properties.snapshot_name} listening on topic {p_topic}"
+                        )
+                        
                     return result
 
     def snapshost_trigger(self, snapshot_name: str, timeout: float = None):

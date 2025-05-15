@@ -210,7 +210,8 @@ class dml:
                             # iit should be a recurring snapshot
                             snapshot = self.reply_recurring_snapsthot_message[from_topic]
                             message_type = decoded_message.get('message_type', None)
-                            if message_type == None: continue
+                            if message_type is None:
+                                continue
                             if message_type == 0 and snapshot.state == SnapshotState.INITIALIZED:
                                 snapshot.state = SnapshotState.HEADER_RECEVED
                                 #get the timestsamp and iteration

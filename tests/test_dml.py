@@ -230,6 +230,8 @@ def test_recurring_snapshot():
             received_snapshot = snapshot_data
             
     try:
+        result = k.snapshot_stop("snap_1")
+        print(result)
         result = k.snapshot_recurring(
             SnapshotProperties(
                 snapshot_name = "snap_1",

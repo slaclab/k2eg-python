@@ -387,7 +387,7 @@ class Broker:
         #validate properties
         properties.validate()
         json_msg = {
-            "command": "snapshot-repeating",
+            "command": "repeating_snapshot",
             "serialization": "msgpack",
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id,
@@ -402,7 +402,7 @@ class Broker:
     def send_repeating_snapshot_trigger_command(self, snapshot_name:str, reply_id:str):
         #validate properties
         json_msg = {
-            "command": "snapshot-repeating-stop",
+            "command": "repeating_snapshot_trigger",
             "serialization": "msgpack",
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id,
@@ -413,7 +413,7 @@ class Broker:
     def send_repeating_snapshot_stop_command(self, snapshot_name:str, reply_id:str):
         #validate properties
         json_msg = {
-            "command": "snapshot-repeating-stop",
+            "command": "repeating_snapshot_stop",
             "serialization": "msgpack",
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id,

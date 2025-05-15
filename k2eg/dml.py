@@ -544,6 +544,8 @@ class dml:
         self._validate_snapshot_name(properties.snapshot_name)
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
+            # init reply slot
+            self.reply_message[new_reply_id] = None
             # Set the snapshot handler and initialize the snapshot results vector
             self.reply_recurring_snapsthot_message[properties.snapshot_name] = Snapshot(handler=handler)
 
@@ -571,6 +573,8 @@ class dml:
         self._validate_snapshot_name(snapshot_name)
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
+            # init reply slot
+            self.reply_message[new_reply_id] = None
             # Set the snapshot handler and initialize the snapshot results vector
             del self.reply_recurring_snapsthot_message[snapshot_name]
 
@@ -598,8 +602,11 @@ class dml:
         self._validate_snapshot_name(snapshot_name)
         new_reply_id = str(uuid.uuid1())
         with self.reply_wait_condition:
+            # init reply slot
+            self.reply_message[new_reply_id] = None
             # Set the snapshot handler and initialize the snapshot results vector
-            del self.reply_recurring_snapsthot_message[snapshot_name]
+            if snapshot_name in self.reply_recurring_snapsthot_message:
+                del self.reply_recurring_snapsthot_message[snapshot_name]
 
             # send message to k2eg fto execute snapshot
             self.__broker.send_repeating_snapshot_stop_command(

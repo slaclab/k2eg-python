@@ -44,6 +44,8 @@ class SnapshotState(Enum):
 @dataclass
 class Snapshot:
     handler: Callable[[str, Dict[str, Any]], None]
+    snapshot_name: str = None
+    publishing_topic: str = None
     state: SnapshotState = SnapshotState.INITIALIZED 
     timestamp: datetime.datetime = None
     interation: int = 0
@@ -224,6 +226,8 @@ class dml:
                                     snapshot.state = SnapshotState.TAIL_RECEIVED
                                     logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}]")  
                                     self.reply_recurring_snapsthot_message[from_topic] = Snapshot(handler=snapshot.handler)
+                                    self.reply_recurring_snapsthot_message[from_topic].snapshot_name = snapshot.snapshot_name
+                                    self.reply_recurring_snapsthot_message[from_topic].publishing_topic = snapshot.publishing_topic
                                     # and call async handler in another thread
                                     executor.submit(
                                         snapshot.handler,
@@ -571,7 +575,8 @@ class dml:
                          # Set the snapshot handler and initialize the snapshot results vector
                         p_topic = result["publishing_topic"]
                         self.reply_recurring_snapsthot_message[p_topic] = Snapshot(handler=handler)
-                        self.reply_recurring_snapsthot_message[p_topic].publushing_topic = result["publishing_topic"]
+                        self.reply_recurring_snapsthot_message[p_topic].snapshot_name = properties.snapshot_name
+                        self.reply_recurring_snapsthot_message[p_topic].publishing_topic = result["publishing_topic"]
                         self.__broker.add_topic(p_topic)
                         logging.info(
                             f"Recurring snapshot {properties.snapshot_name} listening on topic {p_topic}"
@@ -587,8 +592,6 @@ class dml:
         with self.reply_wait_condition:
             # init reply slot
             self.reply_message[new_reply_id] = None
-            # Set the snapshot handler and initialize the snapshot results vector
-            del self.reply_recurring_snapsthot_message[snapshot_name]
 
             # send message to k2eg fto execute snapshot
             self.__broker.send_repeating_snapshot_trigger_command(
@@ -616,10 +619,16 @@ class dml:
         with self.reply_wait_condition:
             # init reply slot
             self.reply_message[new_reply_id] = None
-            # Set the snapshot handler and initialize the snapshot results vector
-            if snapshot_name in self.reply_recurring_snapsthot_message:
-                del self.reply_recurring_snapsthot_message[snapshot_name]
-
+            # the snapshot map key is the kafaka topic directly
+            topic_key_for_snapshot_to_remove = None
+            for topic, snapshot in self.reply_recurring_snapsthot_message.items():
+                if snapshot.snapshot_name == snapshot_name:
+                    topic_key_for_snapshot_to_remove = topic
+                    break
+            if topic_key_for_snapshot_to_remove is not None:
+                del self.reply_recurring_snapsthot_message[topic_key_for_snapshot_to_remove]
+                self.__broker.remove_topic(topic_key_for_snapshot_to_remove)
+            
             # send message to k2eg fto execute snapshot
             self.__broker.send_repeating_snapshot_stop_command(
                 snapshot_name,

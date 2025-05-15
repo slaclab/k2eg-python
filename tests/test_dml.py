@@ -221,21 +221,21 @@ def test_snapshot_on_simple_fixed_pv_sync():
         
 def test_recurring_snapshot():
     retry = 0
-    snapstho_name = "snap_1"
+    snapshot_name = "snap_1"
     received_snapshot:Snapshot = None
     def snapshot_handler(id, snapshot_data:Snapshot):
-        nonlocal snapstho_name
+        nonlocal snapshot_name
         nonlocal received_snapshot
-        if snapstho_name == id:
+        if snapshot_name == id:
             received_snapshot = snapshot_data
             
     try:
-        result = k.snapshot_stop(snapstho_name)
+        result = k.snapshot_stop(snapshot_name)
         print(result)
         time.sleep(1)
         result = k.snapshot_recurring(
             SnapshotProperties(
-                snapshot_name = snapstho_name,
+                snapshot_name = snapshot_name,
                 time_window = 1000,
                 repeat_delay = 0,
                 pv_uri_list = ['pva://variable:a', 'pva://variable:b'],
@@ -248,8 +248,54 @@ def test_recurring_snapshot():
         while (received_snapshot is None ) and retry < 3:
             retry = retry+1
             time.sleep(2)
-        k.snapshot_stop("snap_1")
+        k.snapshot_stop(snapshot_name)
         time.sleep(1)
+        # received_snapshot shuld be a dict with the snapshot data
+        assert received_snapshot.state == SnapshotState.TAIL_RECEIVED, "state should be TAIL_RECEIVED"
+        assert received_snapshot.timestamp > 0, "timestamp should be valid"
+        assert received_snapshot.interation > 0, "interation should be valid"
+        assert isinstance(received_snapshot.results, list), "results should be a list"
+        assert len(received_snapshot.results) == 2, "results should be a list of 2"
+    except Exception as e:
+        assert False, f"An error occured: {e}"
+    finally:
+        k.snapshot_stop(snapshot_name)
+        time.sleep(1)
+        
+def test_recurring_snapshot_triggered():
+    retry = 0
+    snapshot_name = "snap_1"
+    received_snapshot:Snapshot = None
+    def snapshot_handler(id, snapshot_data:Snapshot):
+        nonlocal snapshot_name
+        nonlocal received_snapshot
+        if snapshot_name == id:
+            received_snapshot = snapshot_data
+            
+    try:
+        result = k.snapshot_stop(snapshot_name)
+        print(result)
+        time.sleep(1)
+        result = k.snapshot_recurring(
+            SnapshotProperties(
+                snapshot_name = snapshot_name,
+                time_window = 1000,
+                repeat_delay = 0,
+                pv_uri_list = ['pva://variable:a', 'pva://variable:b'],
+                triggered=True,
+            ),
+            handler=snapshot_handler,
+            timeout=10,
+        )
+        print(result)
+        time.sleep(5)
+        # send 5 snapshots
+        result = k.snapshost_trigger(snapshot_name)
+        print(result)
+        time.sleep(1)
+        k.snapshot_stop(snapshot_name)
+        time.sleep(1)
+        assert received_snapshot is not None, "snapshot should not be None"
         # received_snapshot shuld be a dict with the snapshot data
         assert received_snapshot.state == SnapshotState.TAIL_RECEIVED, "state should be TAIL_RECEIVED"
         assert received_snapshot.timestamp > 0, "timestamp should be valid"

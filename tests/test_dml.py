@@ -263,7 +263,6 @@ def test_recurring_snapshot():
         time.sleep(1)
         
 def test_recurring_snapshot_triggered():
-    retry = 0
     snapshot_name = "snap_1"
     received_snapshot:Snapshot = None
     def snapshot_handler(id, snapshot_data:Snapshot):

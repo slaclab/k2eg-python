@@ -27,6 +27,15 @@ services:
     # Use "forwardPorts" in **devcontainer.json** to forward an app port locally. 
     # (Adding the "ports" property to this file will not forward from a Codespace.)
 
+  consul-server:
+    image: consul:1.15
+    # ports:
+    #   - "8500:8500"  # Consul HTTP API and UI
+    #   - "8600:8600/udp"  # DNS interface (if needed)
+    command: agent -dev -ui -client=0.0.0.0
+    volumes:
+      - consul_data:/consul/data  # Optional persistent storage for Consul data
+
   epics_pva:
     build:
       context: ../
@@ -46,6 +55,7 @@ services:
     entrypoint: k2eg
     depends_on: 
       - kafka
+      - consul-server
     command: [
       "--log-level=trace", 
       "--cmd-input-topic=cmd-in-topic", 
@@ -58,7 +68,8 @@ services:
       "--monitor-worker-cron-schedule=*/5 * * * * *",
       "--nc-monitor-expiration-timeout=1",
       "--nc-purge-queue-on-exp-timeout=true",
-      "--nc-monitor-consumer-filterout-regex=.*k2eg.*"]
+      "--nc-monitor-consumer-filterout-regex=.*k2eg.*",
+      "--configuration-server-host=consul-server"]
   
   kafka:
     image: docker.io/bitnami/kafka:3.6
@@ -80,3 +91,5 @@ services:
 volumes:
   kafka_data:
     driver: local
+  consul_data: {}
+  

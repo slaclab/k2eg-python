@@ -194,9 +194,11 @@ class dml:
                             snapshot = self.reply_snapsthot_message[msg_id]
                             # check if the message is a snapshot completion error == 1
                             if decoded_message.get('error', 0) == 0:
+                                logging.debug(f"Added message to snapshot {msg_id}]")  
                                 # the message contains a snapshot value
                                 snapshot.results.append(decoded_message)
                             else:
+                                logging.debug(f"Snapshot {msg_id} compelted with error {decoded_message.get('error', 0)}")
                                 # we got the completion message so             
                                 # remove the snapshot from the list
                                 del self.reply_snapsthot_message[msg_id]
@@ -225,7 +227,7 @@ class dml:
                                     # we got the completion message on snpahsot that we are managing         
                                     # renew the snapshtot
                                     snapshot.state = SnapshotState.TAIL_RECEIVED
-                                    logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}]")  
+                                    logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] messages {len(snapshot.results)}")  
                                     self.reply_recurring_snapsthot_message[from_topic] = Snapshot(handler=snapshot.handler)
                                     self.reply_recurring_snapsthot_message[from_topic].snapshot_name = snapshot.snapshot_name
                                     self.reply_recurring_snapsthot_message[from_topic].publishing_topic = snapshot.publishing_topic
@@ -648,7 +650,7 @@ class dml:
                 else:
                     return result
 
-    def snapshot_sync(self,  pv_uri_list: list[str], timeout: float = 10)->list[dict[str, Any]]:
+    def snapshot_sync(self,  pv_uri_list: list[str], timeout: float = 10.0)->list[dict[str, Any]]:
         """ Perform the snapshot operation
         return the snapshot value synchronously
         """
@@ -665,7 +667,7 @@ class dml:
         
         while(received_snapshot is None):
             # wait some millisecondos on this thread
-            sleep(0.03)
+            sleep(0.3)
             if timeout is not None:
                 timeout = timeout - 0.3
                 if timeout <= 0:

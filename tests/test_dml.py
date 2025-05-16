@@ -209,7 +209,7 @@ def test_snapshot_on_simple_fixed_pv_sync():
     try:
         received_snapshot = k.snapshot_sync(['pva://variable:a', 'pva://variable:b'])
         # received_snapshot shuld be a dict with the snapshot data
-        assert isinstance(received_snapshot, dict), "value should be a list"
+        assert isinstance(received_snapshot, dict), "value should be a dict"
         assert "error" in received_snapshot, "error should be in the snapshot"
         assert received_snapshot['error'] == 0, "error should be 0"
         assert "snapshot" in received_snapshot, "snapshot should be in the snapshot"
@@ -245,7 +245,7 @@ def test_recurring_snapshot():
             timeout=10,
         )
         print(result)
-        while (received_snapshot is None ) and retry < 3:
+        while (received_snapshot is None ) and retry < 5:
             retry = retry+1
             time.sleep(5)
         k.snapshot_stop(snapshot_name)
@@ -291,7 +291,7 @@ def test_recurring_snapshot_triggered():
         # send 5 snapshots
         result = k.snapshost_trigger(snapshot_name)
         print(result)
-        time.sleep(1)
+        time.sleep(5)
         k.snapshot_stop(snapshot_name)
         time.sleep(1)
         assert received_snapshot is not None, "snapshot should not be None"

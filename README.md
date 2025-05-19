@@ -168,12 +168,80 @@ Performs a snapshot creation for a list of PVs.
 Creates a recurring snapshot for a list of PVs.
 
 - **Parameters:**
-  - `properties` (SnapshotProperties): Snapshot configuration.
-  - `handler` (Callable): Function to call asynchronously with the snapshot results.
-  - `timeout` (float, optional): Timeout in seconds.
+  - `properties` (**SnapshotProperties**): Snapshot configuration object that defines how the recurring snapshot will behave.  
+    The `SnapshotProperties` class includes the following fields:
+    - **`snapshot_name`** (`str`):  
+      A unique name for the snapshot operation. Used to identify and manage the recurring snapshot.
+    - **`pv_uri_list`** (`list[str]`):  
+      List of PV URIs to include in the snapshot (e.g., `["pva://variable:a", "ca://variable:b"]`).
+    - **`time_window`** (`int`, optional):  
+      The time window in milliseconds for the snapshot acquisition. Defines the maximum allowed time to collect all PV values for a single snapshot. If not set, the default is used.
+    - **`repeat_delay`** (`int`, optional and not yet implemented on backend):  
+      The delay in milliseconds between consecutive snapshots. If set to `0`, snapshots are taken back-to-back. If omitted, the default is used.
+    - **`triggered`** (`bool`, optional):  
+      If `True`, the snapshot is triggered manually using `snapshost_trigger()`. If `False`, snapshots are taken automatically at intervals defined by `repeat_delay`.
+    - **Other fields**:  
+      Depending on your K2EG deployment, additional fields may be supported (see your deployment's documentation for details).
 
-- **Returns:**  
-  - The result of the snapshot creation.
+  - `handler` (Callable): Function to call asynchronously with the snapshot results. The handler receives two arguments: the snapshot ID (`str`) and the snapshot data (see [Snapshot Handler Return Type](#snapshot-handler-return-type) for details).
+  - `timeout` (float, optional): Timeout in seconds for the operation.
+
+> **Note:**  
+> The `SnapshotProperties` object allows fine-grained control over how and when snapshots are taken, including which PVs to include, how often to repeat, and whether snapshots are triggered automatically or manually.
+
+- **Returns: Snapshot Dictionary Structure in  the handler**
+
+<!--
+Handler Documentation
+
+Each time a snapshot is received, the handler is invoked with two parameters:
+- `snapshot_name` (str): The name of the snapshot source.
+- `data` (dict): A dictionary containing the snapshot data with the following keys:
+  - (list the expected keys and their descriptions here)
+
+Example:
+  handler(snapshot_name: str, data: dict)
+
+Note:
+- Ensure that `snapshot_name` accurately identifies the source.
+- The `data` dictionary structure should be documented for clarity.
+-->
+Each time a snapshot is received the handler contains two parameter a string and a dictionary, the string is the `snapshot_name`0 from which the snpashto is received the  dictionary contains the following keys:
+
+- **`timestamp`** (`int`):  
+  The Unix timestamp (in milliseconds) indicating when the snapshot was taken.
+
+- **`iteration`** (`int`):  
+  The iteration number of the snapshot (useful for recurring snapshots).
+
+- **PV Name(s)** (`str`):  
+  Each PV in the snapshot will have a key corresponding to its short name (e.g., `"variable:a"`, `"variable:b"`). The value for each PV key is the value of that process variable at the time of the snapshot.
+
+##### Example
+
+Suppose you take a snapshot of two PVs: `pva://variable:a` and `pva://variable:b`. The handler will receive a dictionary like:
+
+```python
+{
+  "timestamp": 1716123456789,
+  "iteration": 1,
+  "variable:a": {epics field},
+  "variable:b": {epics field},
+}
+```
+
+#### Usage in Handler
+
+Your handler should expect two arguments: the snapshot ID (a string) and the snapshot data (a list of dictionaries as described above):
+
+```python
+def snapshot_handler(snapshot_id, snapshot_data):
+    for pv_snapshot in snapshot_data:
+        print(f"Snapshot at {pv_snapshot['timestamp']} for {list(pv_snapshot.keys())}: {pv_snapshot}")
+```
+
+> **Note:**  
+> The exact keys present in each dictionary depend on the PVs included in the snapshot request. The `timestamp` and `iteration` keys are always present.
 
 - **Raises:**  
   - `ValueError`: If any protocol is not 'pva' or 'ca'.

@@ -44,11 +44,12 @@ class SnapshotState(Enum):
 @dataclass
 class Snapshot:
     handler: Callable[[str, Dict[str, Any]], None]
-    snapshot_name: str = None
+    properties: SnapshotProperties = None
     publishing_topic: str = None
     state: SnapshotState = SnapshotState.INITIALIZED 
     timestamp: datetime.datetime = None
     interation: int = 0
+    pv_list: List[str] = field(default_factory=list)
     results: List[Dict[str, Any]] = field(default_factory=list)
 
 class dml:
@@ -214,34 +215,47 @@ class dml:
                             message_type = decoded_message.get('message_type', None)
                             if message_type is None:
                                 continue
-                            if message_type == 0 and snapshot.state == SnapshotState.INITIALIZED:
+                            if message_type == 0 and (snapshot.state == SnapshotState.INITIALIZED or snapshot.state == SnapshotState.TAIL_RECEIVED):
                                 snapshot.state = SnapshotState.HEADER_RECEVED
                                 #get the timestsamp and iteration
                                 snapshot.timestamp = decoded_message.get('timestamp', None)
                                 snapshot.interation = decoded_message.get('iter_index', 0)
+                                logging.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] messages {len(snapshot.results)}")
                             elif message_type == 1 and (snapshot.state  == SnapshotState.HEADER_RECEVED or snapshot.state  == SnapshotState.DATA_ACQUIRING):
                                 ## we are acquireing data for the snapshtot
                                 snapshot.state  == SnapshotState.DATA_ACQUIRING
                                 snapshot.results.append(decoded_message)
+                                logging.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {len(snapshot.results)}")
                             elif message_type == 2 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
-                                    # we got the completion message on snpahsot that we are managing         
-                                    # renew the snapshtot
-                                    snapshot.state = SnapshotState.TAIL_RECEIVED
-                                    logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] messages {len(snapshot.results)}")  
-                                    self.reply_recurring_snapsthot_message[from_topic] = Snapshot(handler=snapshot.handler)
-                                    self.reply_recurring_snapsthot_message[from_topic].snapshot_name = snapshot.snapshot_name
-                                    self.reply_recurring_snapsthot_message[from_topic].publishing_topic = snapshot.publishing_topic
-                                    # and call async handler in another thread
-                                    executor.submit(
-                                        snapshot.handler,
-                                        msg_id,
-                                        snapshot
-                                    )
+                                # we got the completion message on snapshot that we are managing         
+                                # renew the snapshot
+                                snapshot.state = SnapshotState.TAIL_RECEIVED
+                                logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] messages {len(snapshot.results)}")  
+                                # Prepare a dictionary with only PV values, inter_index, and timestamp
+                                handler_data = {}
+                                # Add 'iter_index' and 'timestamp' if present and not already set
+                                handler_data["iteration"] = snapshot.interation
+                                handler_data["timestamp"] =  snapshot.timestamp
+                                for result in snapshot.results:
+                                    # Extract PV values comparing with the list of PVs
+                                    for pv_name in snapshot.pv_list:
+                                        if pv_name in result:
+                                            handler_data[pv_name] = result[pv_name]
+
+                                # remove all received messages
+                                snapshot.results = []
+
+                                # and call async handler in another thread
+                                executor.submit(
+                                    snapshot.handler,
+                                    msg_id,
+                                    handler_data
+                                )
                                     
                             else:
                                 #log the error
                                 logging.error(
-                                    f"Error during snapshot {msg_id} with message type {message_type}"
+                                    f"Error during snapshot {msg_id} with message type {message_type} and state {snapshot.state}"
                                 )
 
 
@@ -557,6 +571,15 @@ class dml:
             # init reply slot
             self.reply_message[new_reply_id] = None
 
+            # create the snaphsot structure
+            s = Snapshot(handler=handler)
+            # fill pv_list with the name of the pv without pva:// or ca://
+            s.pv_list = [
+                self.parse_pv_url(pv_uri)[1] for pv_uri in properties.pv_uri_list
+            ]
+            s.properties = properties
+            s.publishing_topic = None
+
             # send message to k2eg fto execute snapshot
             self.__broker.send_repeating_snapshot_command(
                 properties,
@@ -576,13 +599,11 @@ class dml:
                     #at this point we need to start listening to the right topic
                     if "publishing_topic" in result:
                          # Set the snapshot handler and initialize the snapshot results vector
-                        p_topic = result["publishing_topic"]
-                        self.reply_recurring_snapsthot_message[p_topic] = Snapshot(handler=handler)
-                        self.reply_recurring_snapsthot_message[p_topic].snapshot_name = properties.snapshot_name
-                        self.reply_recurring_snapsthot_message[p_topic].publishing_topic = result["publishing_topic"]
-                        self.__broker.add_topic(p_topic)
+                        s.publishing_topic = result["publishing_topic"]
+                        self.reply_recurring_snapsthot_message[s.publishing_topic] = s
+                        self.__broker.add_topic(s.publishing_topic)
                         logging.info(
-                            f"Recurring snapshot {properties.snapshot_name} listening on topic {p_topic}"
+                            f"Recurring snapshot {properties.snapshot_name} listening on topic {s.publishing_topic}"
                         )
                         
                     return result
@@ -625,7 +646,7 @@ class dml:
             # the snapshot map key is the kafaka topic directly
             topic_key_for_snapshot_to_remove = None
             for topic, snapshot in self.reply_recurring_snapsthot_message.items():
-                if snapshot.snapshot_name == snapshot_name:
+                if snapshot.properties.snapshot_name == snapshot_name:
                     topic_key_for_snapshot_to_remove = topic
                     break
             if topic_key_for_snapshot_to_remove is not None:

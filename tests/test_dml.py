@@ -1,9 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
 import logging
+from typing import Any, Dict
 from uuid import uuid1
 import k2eg
 from k2eg.broker import SnapshotProperties
-from k2eg.dml import Snapshot, SnapshotState, _filter_pv_uri
+from k2eg.dml import Snapshot, _filter_pv_uri
 import time
 import pytest
 from unittest import TestCase
@@ -222,12 +223,12 @@ def test_snapshot_on_simple_fixed_pv_sync():
 def test_recurring_snapshot():
     retry = 0
     snapshot_name = "snap_1"
-    received_snapshot:Snapshot = None
-    def snapshot_handler(id, snapshot_data:Snapshot):
+    received_snapshot:list[Snapshot] = []
+    def snapshot_handler(id, snapshot_data:Dict[str, Any]):
         nonlocal snapshot_name
         nonlocal received_snapshot
         if snapshot_name == id:
-            received_snapshot = snapshot_data
+            received_snapshot.append(snapshot_data)
             
     try:
         result = k.snapshot_stop(snapshot_name)
@@ -245,17 +246,17 @@ def test_recurring_snapshot():
             timeout=10,
         )
         print(result)
-        while (received_snapshot is None ) and retry < 5:
+        while (len(received_snapshot) == 0 ) and retry < 5:
             retry = retry+1
             time.sleep(5)
         k.snapshot_stop(snapshot_name)
         time.sleep(1)
         # received_snapshot shuld be a dict with the snapshot data
-        assert received_snapshot.state == SnapshotState.TAIL_RECEIVED, "state should be TAIL_RECEIVED"
-        assert received_snapshot.timestamp > 0, "timestamp should be valid"
-        assert received_snapshot.interation > 0, "interation should be valid"
-        assert isinstance(received_snapshot.results, list), "results should be a list"
-        assert len(received_snapshot.results) == 2, "results should be a list of 2"
+        assert len(received_snapshot) > 0, "snapshot should not be None"
+        assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
+        assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
+        assert 'variable:a' in received_snapshot[0], "variable:a need be contained into the snapshot"
+        assert 'variable:b' in received_snapshot[0], "variable:b need be contained into the snapshot"
     except Exception as e:
         assert False, f"An error occured: {e}"
     finally:
@@ -264,12 +265,12 @@ def test_recurring_snapshot():
         
 def test_recurring_snapshot_triggered():
     snapshot_name = "snap_1"
-    received_snapshot:Snapshot = None
+    received_snapshot:list[Snapshot] = []
     def snapshot_handler(id, snapshot_data:Snapshot):
         nonlocal snapshot_name
         nonlocal received_snapshot
         if snapshot_name == id:
-            received_snapshot = snapshot_data
+            received_snapshot.append(snapshot_data)
             
     try:
         result = k.snapshot_stop(snapshot_name)
@@ -287,20 +288,21 @@ def test_recurring_snapshot_triggered():
             timeout=10,
         )
         print(result)
-        time.sleep(5)
-        # send 5 snapshots
+        time.sleep(2)
+        # send 2 snapshots
         result = k.snapshost_trigger(snapshot_name)
         print(result)
-        time.sleep(5)
+        time.sleep(2)
+        result = k.snapshost_trigger(snapshot_name)
+        print(result)
+        time.sleep(2)
         k.snapshot_stop(snapshot_name)
         time.sleep(1)
-        assert received_snapshot is not None, "snapshot should not be None"
-        # received_snapshot shuld be a dict with the snapshot data
-        assert received_snapshot.state == SnapshotState.TAIL_RECEIVED, "state should be TAIL_RECEIVED"
-        assert received_snapshot.timestamp > 0, "timestamp should be valid"
-        assert received_snapshot.interation > 0, "interation should be valid"
-        assert isinstance(received_snapshot.results, list), "results should be a list"
-        assert len(received_snapshot.results) == 2, "results should be a list of 2"
+        assert len(received_snapshot) == 2 , "snapshot should only one"
+        assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
+        assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
+        assert 'variable:a' in received_snapshot[0], "variable:a need be contained into the snapshot"
+        assert 'variable:b' in received_snapshot[0], "variable:b need be contained into the snapshot"
     except Exception as e:
         assert False, f"An error occured: {e}"
     finally:

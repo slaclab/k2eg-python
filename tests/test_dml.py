@@ -1,9 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
 import logging
+from typing import Any, Dict
 from uuid import uuid1
 import k2eg
 from k2eg.broker import SnapshotProperties
-from k2eg.dml import Snapshot, SnapshotState, _filter_pv_uri
+from k2eg.dml import Snapshot, _filter_pv_uri
 import time
 import pytest
 from unittest import TestCase
@@ -223,7 +224,7 @@ def test_recurring_snapshot():
     retry = 0
     snapshot_name = "snap_1"
     received_snapshot:list[Snapshot] = []
-    def snapshot_handler(id, snapshot_data:Snapshot):
+    def snapshot_handler(id, snapshot_data:Dict[str, Any]):
         nonlocal snapshot_name
         nonlocal received_snapshot
         if snapshot_name == id:

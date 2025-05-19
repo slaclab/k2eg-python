@@ -527,7 +527,7 @@ class dml:
             )
         return new_reply_id
     
-    def snapshot_recurring(self,  properties: SnapshotProperties, handler: Callable[[str, Snapshot], None], timeout: float = None):
+    def snapshot_recurring(self,  properties: SnapshotProperties, handler: Callable[[str, Dict[str, Any]], None], timeout: float = None):
         """
         Create a new recurring snapshot for a list of process variables (PVs).
 

@@ -1,30 +1,34 @@
 # K2EG Python Library
 
-K2EG (Kafka to EPICS Gateway) is a scalable, high-performance gateway that bridges EPICS (Experimental Physics and Industrial Control System) process variables (PVs) with modern data streaming platforms using Apache Kafka. It enables seamless integration between control systems and data processing pipelines, supporting both EPICS Channel Access (CA) and PVAccess (PVA) protocols. The K2EG Python Library provides a simple, high-level API for interacting with the K2EG gateway, allowing users to perform operations such as reading and writing PVs, monitoring real-time updates, and managing snapshots of PV states, all through Kafka-backed messaging. This library is ideal for scientific facilities, accelerators, and industrial automation environments that require robust, distributed control and data acquisition.
+K2EG (Kafka to EPICS Gateway) is a scalable, high-performance gateway that bridges EPICS (Experimental Physics and Industrial Control System) process variables (PVs) with modern data streaming platforms using Apache Kafka. It enables seamless integration between control systems and data processing pipelines, supporting both EPICS Channel Access (CA) and PVAccess (PVA) protocols.
+
+The K2EG Python Library provides a simple, high-level API for interacting with the K2EG gateway, allowing users to perform operations such as reading and writing PVs, monitoring real-time updates, and managing snapshots of PV states, all through Kafka-backed messaging. This library is ideal for scientific facilities, accelerators, and industrial automation environments that require robust, distributed control and data acquisition.
 
 A key feature of K2EG is the **snapshot operation**. Unlike a simple get on multiple PVs, a snapshot is a coordinated data acquisition (DAQ) operation that captures the values of a set of PVs at the same instant. Snapshots can be triggered automatically at regular intervals (recurring snapshots) or manually by the developer using the provided API. This mechanism is designed for use cases where synchronized acquisition of multiple PVs is required, such as in experimental physics, diagnostics, or control system archiving.
 
-## Configuration
-K2EG python lib uses the configparser package configurator. It needs the following keys:
+---
 
-```
+## Configuration
+
+K2EG Python lib uses the `configparser` package for configuration. It needs the following keys in the configuration file:
+
+```ini
 [DEFAULT]
 kafka_broker_url=<kafka broker url>
 k2eg_cmd_topic=<gateway command input topic>
 reply_topic=<reply topic>
 ```
 
-The class ***dml*** takes as input the name of the environment to configure the broker. The name of the environment will be used to select the ***.ini*** file for configuring the broker class.
+The class `dml` takes as input the name of the environment to configure the broker. The name of the environment will be used to select the `.ini` file for configuring the broker class.
 
-For example, given the below folder:
-
+**Example folder structure:**
 ```
 conf-folder/
     env_1.ini
     env_2.ini
 ```
 
-The below code snippet will take the configuration from the file env_1.ini:
+**Example usage:**
 ```python
 from k2eg.dml import dml as k2eg
 
@@ -34,10 +38,11 @@ got_value = k.get('pva://...')
 
 Preconfigured environments are stored in an internal folder.
 
-### Custom configuration location
-The ***K2EG_PYTHON_CONFIGURATION_PATH_FOLDER*** environment variable can be used to specify a custom configuration folder.
-***K2EG_CLI_DEFAULT_ENVIRONMENT*** => is the default environment for the K2EG demo CLI.
-***K2EG_CLI_DEFAULT_APP_NAME*** => is the default app name to use for the demo CLI.
+### Custom Configuration Location
+
+- `K2EG_PYTHON_CONFIGURATION_PATH_FOLDER`: Specify a custom configuration folder.
+- `K2EG_CLI_DEFAULT_ENVIRONMENT`: Default environment for the K2EG demo CLI.
+- `K2EG_CLI_DEFAULT_APP_NAME`: Default app name for the demo CLI.
 
 ---
 
@@ -50,11 +55,12 @@ This module provides a Python client for interacting with the K2EG system, suppo
 ### Constructor
 
 #### `__init__(environment_id: str, app_name: str, group_name: str = None)`
+
 Initializes the K2EG client.
 
 - **Parameters:**
-  - `environment_id` (str): The environment identifier, is the name of the configuration file `.ini` found on the configuration folder pointed by the ***K2EG_PYTHON_CONFIGURATION_PATH_FOLDER*** variable.
-  - `app_name` (str): The application name (mandatory), it define the name of the kafka topic to use for the reply messages from the k2eg broker.
+  - `environment_id` (str): The environment identifier (name of the `.ini` file in the configuration folder).
+  - `app_name` (str): The application name (mandatory, defines the Kafka topic for reply messages).
   - `group_name` (str, optional): The group name for Kafka consumer group.
 
 - **Raises:**  
@@ -62,10 +68,12 @@ Initializes the K2EG client.
 
 ---
 
-### Public Methods
+## Public Methods
+
+### Backend and PV Operations
 
 #### `wait_for_backends()`
-Waits for the Kafka reply topic to become available before proceeding. It is mandatory to wait that kafka connection and partion are associated to the client before staratin usding k2eg api.
+Waits for the Kafka reply topic to become available before proceeding.
 
 ---
 
@@ -102,6 +110,8 @@ Sets the value for a single PV.
 
 ---
 
+### Monitoring
+
 #### `monitor(pv_url: str, handler: Callable[[str, dict], None], timeout: float = None)`
 Adds a monitor for a PV if not already activated.
 
@@ -117,7 +127,7 @@ Adds a monitor for a PV if not already activated.
   - `ValueError`: If the protocol is not 'pva' or 'ca'.
   - `OperationTimeout`: If the operation times out.
 
-> **Note:** Monitors are automatically removed from the K2EG gateway when there are no consumers for a specific PV anymore (i.e., when no client is consuming from the corresponding Kafka topic). This ensures efficient resource usage on the gateway.
+> **Note:** Monitors are automatically removed from the K2EG gateway when there are no consumers for a specific PV anymore.
 
 ---
 
@@ -136,7 +146,6 @@ Adds monitors for multiple PVs.
   - `ValueError`: If any protocol is not 'pva' or 'ca'.
   - `OperationTimeout`: If the operation times out.
 
-> **Note:** Monitors are automatically removed from the K2EG gateway when there are no consumers for a specific PV anymore (i.e., when no client is consuming from the corresponding Kafka topic). This ensures efficient resource usage on the gateway.
 ---
 
 #### `stop_monitor(pv_name: str)`
@@ -145,9 +154,11 @@ Removes the monitor for a specific PV.
 - **Parameters:**
   - `pv_name` (str): The name of the PV.
 
-> **Note:** This method only stops the local K2EG Python library listener for PV events. On the K2EG gateway, the monitor will continue to be published as long as at least one K2EG client instance is consuming data from the specific monitored PV. The monitor is removed from the gateway only when no clients are consuming from the corresponding Kafka topic.
+> **Note:** This method only stops the local K2EG Python library listener for PV events.
 
 ---
+
+### Snapshot Operations
 
 #### `snapshot(pv_uri_list: list[str], handler: Callable[[str, dict], None]) -> str`
 Performs a snapshot creation for a list of PVs.
@@ -168,59 +179,45 @@ Performs a snapshot creation for a list of PVs.
 Creates a recurring snapshot for a list of PVs.
 
 - **Parameters:**
-  - `properties` (**SnapshotProperties**): Snapshot configuration object that defines how the recurring snapshot will behave.  
-    The `SnapshotProperties` class includes the following fields:
-    - **`snapshot_name`** (`str`):  
-      A unique name for the snapshot operation. Used to identify and manage the recurring snapshot.
-    - **`pv_uri_list`** (`list[str]`):  
-      List of PV URIs to include in the snapshot (e.g., `["pva://variable:a", "ca://variable:b"]`).
-    - **`time_window`** (`int`, optional):  
-      The time window in milliseconds for the snapshot acquisition. Defines the maximum allowed time to collect all PV values for a single snapshot. If not set, the default is used.
-    - **`repeat_delay`** (`int`, optional and not yet implemented on backend):  
-      The delay in milliseconds between consecutive snapshots. If set to `0`, snapshots are taken back-to-back. If omitted, the default is used.
-    - **`triggered`** (`bool`, optional):  
-      If `True`, the snapshot is triggered manually using `snapshost_trigger()`. If `False`, snapshots are taken automatically at intervals defined by `repeat_delay`.
-    - **Other fields**:  
-      Depending on your K2EG deployment, additional fields may be supported (see your deployment's documentation for details).
+  - `properties` (**SnapshotProperties**): Snapshot configuration object that defines how the recurring snapshot will behave.
 
-  - `handler` (Callable): Function to call asynchronously with the snapshot results. The handler receives two arguments: the snapshot ID (`str`) and the snapshot data (see [Snapshot Handler Return Type](#snapshot-handler-return-type) for details).
+    **SnapshotProperties fields:**
+    - **`snapshot_name`** (`str`):  
+      Unique name for the snapshot operation.
+    - **`pv_uri_list`** (`list[str]`):  
+      List of PV URIs to include in the snapshot.
+    - **`time_window`** (`int`, optional):  
+      Time window in milliseconds for the snapshot acquisition.
+    - **`repeat_delay`** (`int`, optional):  
+      Delay in milliseconds between consecutive snapshots.
+    - **`triggered`** (`bool`, optional):  
+      If `True`, the snapshot is triggered manually using `snapshost_trigger()`. If `False`, snapshots are taken automatically.
+    - **Other fields**:  
+      Additional fields may be supported depending on your K2EG deployment.
+
+  - `handler` (Callable): Function to call asynchronously with the snapshot results. The handler receives two arguments: the snapshot ID (`str`) and the snapshot data (see [Snapshot Handler Return Type](#snapshot-handler-return-type)).
   - `timeout` (float, optional): Timeout in seconds for the operation.
 
 > **Note:**  
 > The `SnapshotProperties` object allows fine-grained control over how and when snapshots are taken, including which PVs to include, how often to repeat, and whether snapshots are triggered automatically or manually.
 
-- **Returns: Snapshot Dictionary Structure in  the handler**
+---
 
-<!--
-Handler Documentation
+#### Snapshot Handler Parameters Type
 
 Each time a snapshot is received, the handler is invoked with two parameters:
-- `snapshot_name` (str): The name of the snapshot source.
-- `data` (dict): A dictionary containing the snapshot data with the following keys:
-  - (list the expected keys and their descriptions here)
 
-Example:
-  handler(snapshot_name: str, data: dict)
+- `snapshot_name` (`str`): The name of the snapshot source.
+- `data` (`Dict[str, Any]`): A dictionary containing the snapshot data with the following keys:
 
-Note:
-- Ensure that `snapshot_name` accurately identifies the source.
-- The `data` dictionary structure should be documented for clarity.
--->
-Each time a snapshot is received the handler contains two parameter a string and a dictionary, the string is the `snapshot_name`0 from which the snpashto is received the  dictionary contains the following keys:
+  - **`timestamp`** (`int`):  
+    The Unix timestamp (in milliseconds) indicating when the snapshot was taken.
+  - **`iteration`** (`int`):  
+    The iteration number of the snapshot (useful for recurring snapshots).
+  - **PV Name(s)** (`str`):  
+    Each PV in the snapshot will have a key corresponding to its short name (e.g., `"variable:a"`, `"variable:b"`). The value for each PV key is the value of that process variable at the time of the snapshot.
 
-- **`timestamp`** (`int`):  
-  The Unix timestamp (in milliseconds) indicating when the snapshot was taken.
-
-- **`iteration`** (`int`):  
-  The iteration number of the snapshot (useful for recurring snapshots).
-
-- **PV Name(s)** (`str`):  
-  Each PV in the snapshot will have a key corresponding to its short name (e.g., `"variable:a"`, `"variable:b"`). The value for each PV key is the value of that process variable at the time of the snapshot.
-
-##### Example
-
-Suppose you take a snapshot of two PVs: `pva://variable:a` and `pva://variable:b`. The handler will receive a dictionary like:
-
+**Example:**
 ```python
 {
   "timestamp": 1716123456789,
@@ -230,23 +227,14 @@ Suppose you take a snapshot of two PVs: `pva://variable:a` and `pva://variable:b
 }
 ```
 
-#### Usage in Handler
-
-Your handler should expect two arguments: the snapshot ID (a string) and the snapshot data (a list of dictionaries as described above):
-
+**Usage in Handler:**
 ```python
 def snapshot_handler(snapshot_id, snapshot_data):
-    for pv_snapshot in snapshot_data:
-        print(f"Snapshot at {pv_snapshot['timestamp']} for {list(pv_snapshot.keys())}: {pv_snapshot}")
+    print(f"Snapshot {snapshot_id}: {snapshot_data}")
 ```
 
 > **Note:**  
 > The exact keys present in each dictionary depend on the PVs included in the snapshot request. The `timestamp` and `iteration` keys are always present.
-
-- **Raises:**  
-  - `ValueError`: If any protocol is not 'pva' or 'ca'.
-  - `OperationTimeout`: If the operation times out.
-  - `OperationError`: If the server returns an error.
 
 ---
 
@@ -312,7 +300,6 @@ Closes the client, terminating background threads and closing the broker connect
 ## Example Usage
 
 ```python
-# filepath: /workspace/README.md
 from k2eg.dml import dml
 from k2eg.broker import SnapshotProperties
 
@@ -331,28 +318,16 @@ def handler(pv_name, data):
 client.monitor("pva://my:pv", handler, timeout=5.0)
 
 # Recurring snapshot example
-def snapshot_handler(snapshot_id, snapshot_obj):
-    print(f"Snapshot {snapshot_id}: {snapshot_obj.results}")
+def snapshot_handler(snapshot_id:str, snapshot_obj:Dict[str, Any]):
+    print(f"Snapshot {snapshot_id}: {snapshot_obj}")
 
 properties = SnapshotProperties(
     snapshot_name="my_snapshot",
     pv_uri_list=["pva://my:pv1", "ca://my:pv2"],
-    triggered = False
+    triggered=False
     # ...other SnapshotProperties fields as needed...
 )
-# Stop a recurring snapshot
-client.snapshot_stop("my_snapshot", timeout=5.0)
-
-# Recurring triggered snapshot example
-def snapshot_handler(snapshot_id, snapshot_obj):
-    print(f"Snapshot {snapshot_id}: {snapshot_obj.results}")
-
-properties = SnapshotProperties(
-    snapshot_name="my_snapshot",
-    pv_uri_list=["pva://my:pv1", "ca://my:pv2"],
-    triggered = True
-    # ...other SnapshotProperties fields as needed...
-)
+client.snapshot_recurring(properties, snapshot_handler, timeout=5.0)
 
 # Trigger a recurring snapshot manually
 client.snapshost_trigger("my_snapshot", timeout=5.0)

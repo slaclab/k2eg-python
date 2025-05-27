@@ -7,8 +7,20 @@ import re
 import threading
 import configparser
 import time
+from enum import Enum
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END, OFFSET_BEGINNING
 from confluent_kafka import KafkaError, KafkaException
+
+class SnapshotType(Enum):
+    """
+    Enum to define the type of snapshot
+    
+    NORMAL: A standard snapshot that captures the current state of the PVs in a time window and return the last value
+    TIMEDBUFFER: A snapshot that captures the current state of the PVs in a time window and return all values in the time window for each PV
+    """
+    
+    NORMAL = 'normal'
+    TIMED_BUFFERED = 'timedbuffered'
 
 @dataclass
 class SnapshotProperties:
@@ -23,8 +35,12 @@ class SnapshotProperties:
     repeat_delay: int = 0
     # Define if a snapshot need to be automatically or manually triggered
     triggered: bool = False
+    # The type of the snapshot
+    type: SnapshotType = SnapshotType.NORMAL
     # The list of PV URIs to snapshot
     pv_uri_list:list[str] = None
+    # The list epics filed to return in the snapshot
+    pv_field_filter_list:list[str] = None
     
     def validate(self):
         """
@@ -395,8 +411,12 @@ class Broker:
             "pv_name_list": properties.pv_uri_list,
             "repeat_delay_msec": properties.repeat_delay,
             "time_window_msec": properties.time_window,
-            "triggered": properties.triggered
+            "triggered": properties.triggered,
+            "type": properties.type.value
         }
+        # add pv_field_filter_list if not none and is not empty
+        if properties.pv_field_filter_list is not None and len(properties.pv_field_filter_list) > 0:
+            json_msg['pv_field_filter_list'] = properties.pv_field_filter_list
         self.send_command(json.dumps(json_msg))  
     
     def send_repeating_snapshot_trigger_command(self, snapshot_name:str, reply_id:str):

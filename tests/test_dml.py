@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict
 from uuid import uuid1
 import k2eg
-from k2eg.broker import SnapshotProperties
+from k2eg.broker import SnapshotProperties, SnapshotType
 from k2eg.dml import Snapshot, _filter_pv_uri
 import time
 import pytest
@@ -200,9 +200,9 @@ def test_snapshot_on_simple_fixed_pv():
             retry = retry+1
             time.sleep(2)
         # received_snapshot shuld be a dict with the snapshot data
-        assert isinstance(received_snapshot, list), "value should be a list"
-        assert received_snapshot[0]['variable:a'] is not None, "value should not be None"
-        assert received_snapshot[1]['variable:b'] is not None, "value should not be None"
+        assert isinstance(received_snapshot, dict), "value should be a dict"
+        assert 'variable:a' in received_snapshot, "value should not be None"
+        assert 'variable:b' in received_snapshot, "value should not be None"
     except Exception as e:
         assert False, f"An error occured: {e}"
 
@@ -213,10 +213,8 @@ def test_snapshot_on_simple_fixed_pv_sync():
         assert isinstance(received_snapshot, dict), "value should be a dict"
         assert "error" in received_snapshot, "error should be in the snapshot"
         assert received_snapshot['error'] == 0, "error should be 0"
-        assert "snapshot" in received_snapshot, "snapshot should be in the snapshot"
-        assert isinstance(received_snapshot['snapshot'], list), "value should be a list"
-        assert received_snapshot['snapshot'][0]['variable:a'] is not None, "value should not be None"
-        assert received_snapshot['snapshot'][1]['variable:b'] is not None, "value should not be None"
+        assert 'variable:a' in received_snapshot, "value should not be None"
+        assert 'variable:b' in received_snapshot, "value should not be None"
     except Exception as e:
         assert False, f"An error occured: {e}"
         
@@ -253,10 +251,12 @@ def test_recurring_snapshot():
         time.sleep(1)
         # received_snapshot shuld be a dict with the snapshot data
         assert len(received_snapshot) > 0, "snapshot should not be None"
+        #print a json description for the dictionary
+        print(received_snapshot[0])
         assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
         assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
-        assert 'variable:a' in received_snapshot[0], "variable:a need be contained into the snapshot"
-        assert 'variable:b' in received_snapshot[0], "variable:b need be contained into the snapshot"
+        assert 'variable:a' in received_snapshot[0] and isinstance(received_snapshot[0]['variable:a'], list), "variable:a need be contained into the snapshot"
+        assert 'variable:b' in received_snapshot[0] and isinstance(received_snapshot[1]['variable:a'], list), "variable:b need be contained into the snapshot"
     except Exception as e:
         assert False, f"An error occured: {e}"
     finally:
@@ -301,10 +301,57 @@ def test_recurring_snapshot_triggered():
         assert len(received_snapshot) == 2 , "snapshot should only one"
         assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
         assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
-        assert 'variable:a' in received_snapshot[0], "variable:a need be contained into the snapshot"
-        assert 'variable:b' in received_snapshot[0], "variable:b need be contained into the snapshot"
+        assert 'variable:a' in received_snapshot[0] and isinstance(received_snapshot[0]['variable:a'], list), "variable:a need be contained into the snapshot"
+        assert 'variable:b' in received_snapshot[0] and isinstance(received_snapshot[1]['variable:a'], list), "variable:b need be contained into the snapshot"
     except Exception as e:
         assert False, f"An error occured: {e}"
     finally:
         k.snapshot_stop("snap_1")
+        time.sleep(1)
+        
+def test_recurring_snapshot_timed_buffered():
+    retry = 0
+    snapshot_name = "snap_1"
+    received_snapshot:list[Snapshot] = []
+    def snapshot_handler(id, snapshot_data:Dict[str, Any]):
+        nonlocal snapshot_name
+        nonlocal received_snapshot
+        if snapshot_name == id:
+            received_snapshot.append(snapshot_data)
+            
+    try:
+        result = k.snapshot_stop(snapshot_name)
+        print(result)
+        time.sleep(1)
+        result = k.snapshot_recurring(
+            SnapshotProperties(
+                snapshot_name = snapshot_name,
+                time_window = 5000,
+                repeat_delay = 0,
+                pv_uri_list = ['pva://channel:ramp:ramp', 'pva://channel:ramp:rampa'],
+                triggered=False,
+                type=SnapshotType.TIMED_BUFFERED,
+                pv_field_filter_list = ['value', 'timeStamp'],
+            ),
+            handler=snapshot_handler,
+            timeout=10,
+        )
+        print(result)
+        while (len(received_snapshot) == 0 ) and retry < 5:
+            retry = retry+1
+            time.sleep(5)
+        k.snapshot_stop(snapshot_name)
+        time.sleep(1)
+        # received_snapshot shuld be a dict with the snapshot data
+        assert len(received_snapshot) > 0, "snapshot should not be None"
+        #print a json description for the dictionary
+        print(received_snapshot[0])
+        assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
+        assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
+        assert 'channel:ramp:ramp' in received_snapshot[0] and isinstance(received_snapshot[0]['channel:ramp:ramp'], list), "variable:a need be contained into the snapshot"
+        assert 'channel:ramp:rampa' in received_snapshot[0] and isinstance(received_snapshot[0]['channel:ramp:rampa'], list), "variable:b need be contained into the snapshot"
+    except Exception as e:
+        assert False, f"An error occured: {e}"
+    finally:
+        k.snapshot_stop(snapshot_name)
         time.sleep(1)

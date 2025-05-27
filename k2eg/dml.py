@@ -195,9 +195,16 @@ class dml:
                             snapshot = self.reply_snapsthot_message[msg_id]
                             # check if the message is a snapshot completion error == 1
                             if decoded_message.get('error', 0) == 0:
-                                logging.debug(f"Added message to snapshot {msg_id}]")  
+                                logging.debug(f"Added message to snapshot {msg_id}]") 
+                                decoded_message.pop('error', None)
+                                decoded_message.pop('reply_id', None)
+                                decoded_message.pop('message-size', None)
                                 # the message contains a snapshot value
-                                snapshot.results.append(decoded_message)
+                                if len(decoded_message) == 1:
+                                    pv_name, value = next(iter(decoded_message.items()))
+                                    if pv_name not in snapshot.results:
+                                        snapshot.results[pv_name] = []
+                                    snapshot.results[pv_name].append(value)
                             else:
                                 logging.debug(f"Snapshot {msg_id} compelted with error {decoded_message.get('error', 0)}")
                                 # we got the completion message so             
@@ -710,7 +717,8 @@ class dml:
                     raise OperationTimeout(
                         f"Timeout during snapshot operation for {pv_uri_list}"
                     )
-        return {'error' : 0, "snapshot": received_snapshot}
+        received_snapshot['error'] = 0
+        return received_snapshot
 
     def close(self):
         # signal thread to terminate

@@ -200,9 +200,9 @@ def test_snapshot_on_simple_fixed_pv():
             retry = retry+1
             time.sleep(2)
         # received_snapshot shuld be a dict with the snapshot data
-        assert isinstance(received_snapshot, list), "value should be a list"
-        assert received_snapshot[0]['variable:a'] is not None, "value should not be None"
-        assert received_snapshot[1]['variable:b'] is not None, "value should not be None"
+        assert isinstance(received_snapshot, dict), "value should be a dict"
+        assert 'variable:a' in received_snapshot, "value should not be None"
+        assert 'variable:b' in received_snapshot, "value should not be None"
     except Exception as e:
         assert False, f"An error occured: {e}"
 
@@ -213,10 +213,8 @@ def test_snapshot_on_simple_fixed_pv_sync():
         assert isinstance(received_snapshot, dict), "value should be a dict"
         assert "error" in received_snapshot, "error should be in the snapshot"
         assert received_snapshot['error'] == 0, "error should be 0"
-        assert "snapshot" in received_snapshot, "snapshot should be in the snapshot"
-        assert isinstance(received_snapshot['snapshot'], list), "value should be a list"
-        assert received_snapshot['snapshot'][0]['variable:a'] is not None, "value should not be None"
-        assert received_snapshot['snapshot'][1]['variable:b'] is not None, "value should not be None"
+        assert 'variable:a' in received_snapshot, "value should not be None"
+        assert 'variable:b' in received_snapshot, "value should not be None"
     except Exception as e:
         assert False, f"An error occured: {e}"
         

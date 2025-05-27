@@ -50,7 +50,7 @@ class Snapshot:
     timestamp: datetime.datetime = None
     interation: int = 0
     pv_list: List[str] = field(default_factory=list)
-    results: List[Dict[str, Any]] = field(default_factory=list)
+    results: Dict[str, List[Any]] = field(default_factory=dict[str, List[Any]])
 
 class dml:
     """K2EG client"""
@@ -224,7 +224,18 @@ class dml:
                             elif message_type == 1 and (snapshot.state  == SnapshotState.HEADER_RECEVED or snapshot.state  == SnapshotState.DATA_ACQUIRING):
                                 ## we are acquireing data for the snapshtot
                                 snapshot.state  == SnapshotState.DATA_ACQUIRING
-                                snapshot.results.append(decoded_message)
+                                # remove the timestamp, iter_index, message_type and message_size from the message
+                                decoded_message.pop('timestamp', None)
+                                decoded_message.pop('iter_index', None)
+                                decoded_message.pop('message_type', None)
+                                decoded_message.pop('message-size', None)
+                                #now the remaining key is the pv name and should be used as key
+                                # add the message to the snapshot results and be added to snapshot.results[key] = key-value
+                                if len(decoded_message) == 1:
+                                    pv_name, value = next(iter(decoded_message.items()))
+                                    if pv_name not in snapshot.results:
+                                        snapshot.results[pv_name] = []
+                                    snapshot.results[pv_name].append(value)
                                 logging.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {len(snapshot.results)}")
                             elif message_type == 2 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
                                 # we got the completion message on snapshot that we are managing         
@@ -236,14 +247,18 @@ class dml:
                                 # Add 'iter_index' and 'timestamp' if present and not already set
                                 handler_data["iteration"] = snapshot.interation
                                 handler_data["timestamp"] =  snapshot.timestamp
-                                for result in snapshot.results:
-                                    # Extract PV values comparing with the list of PVs
-                                    for pv_name in snapshot.pv_list:
-                                        if pv_name in result:
-                                            handler_data[pv_name] = result[pv_name]
+                                # add key and value from snapshot.results
+                                for pv_name, values in snapshot.results.items():
+                                    if isinstance(values, list) and len(values) > 0:
+                                        handler_data[pv_name] = values
+                                    else:
+                                        # if the value is not a list or is empty, we skip it
+                                        logging.warning(
+                                            f"Skipping pv {pv_name} with no values in snapshot {from_topic}"
+                                        )
 
-                                # remove all received messages
-                                snapshot.results = []
+                                # clear the dictionary
+                                snapshot.results.clear()
 
                                 # and call async handler in another thread
                                 executor.submit(

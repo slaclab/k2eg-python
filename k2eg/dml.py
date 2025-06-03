@@ -264,14 +264,10 @@ class dml:
                                 handler_data["iteration"] = snapshot.interation
                                 handler_data["timestamp"] =  snapshot.timestamp
                                 # add key and value from snapshot.results
+                                # to the handler data
                                 for pv_name, values in snapshot.results.items():
-                                    if isinstance(values, list) and len(values) > 0:
-                                        handler_data[pv_name] = values
-                                    else:
-                                        # if the value is not a list or is empty, we skip it
-                                        logging.warning(
-                                            f"Skipping pv {pv_name} with no values in snapshot {from_topic}"
-                                        )
+                                    handler_data[pv_name] = values
+ 
 
                                 # and call async handler in another thread
                                 executor.submit(

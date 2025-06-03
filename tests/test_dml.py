@@ -285,6 +285,7 @@ def test_recurring_snapshot_check_for_empty_pv():
                 repeat_delay = 0,
                 pv_uri_list = ['pva://variable:a', 'pva://channel:ramp:ramp'],
                 triggered=False,
+                type=SnapshotType.TIMED_BUFFERED,
             ),
             handler=snapshot_handler,
             timeout=10,

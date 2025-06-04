@@ -51,7 +51,16 @@ class Snapshot:
     interation: int = 0
     pv_list: List[str] = field(default_factory=list)
     results: Dict[str, List[Any]] = field(default_factory=dict[str, List[Any]])
-
+    def init(self):
+        # fill the results with empty lists for each pv
+        for pv in self.pv_list:
+            self.results[pv] = []
+            
+    def clear(self):
+        """Clear all lists in the results dictionary without removing the keys."""
+        for key in self.results:
+            self.results[key] = []
+            
 class dml:
     """K2EG client"""
     def __init__(
@@ -255,17 +264,10 @@ class dml:
                                 handler_data["iteration"] = snapshot.interation
                                 handler_data["timestamp"] =  snapshot.timestamp
                                 # add key and value from snapshot.results
+                                # to the handler data
                                 for pv_name, values in snapshot.results.items():
-                                    if isinstance(values, list) and len(values) > 0:
-                                        handler_data[pv_name] = values
-                                    else:
-                                        # if the value is not a list or is empty, we skip it
-                                        logging.warning(
-                                            f"Skipping pv {pv_name} with no values in snapshot {from_topic}"
-                                        )
-
-                                # clear the dictionary
-                                snapshot.results.clear()
+                                    handler_data[pv_name] = values
+ 
 
                                 # and call async handler in another thread
                                 executor.submit(
@@ -273,6 +275,8 @@ class dml:
                                     msg_id,
                                     handler_data
                                 )
+                                # clear the dictionary
+                                snapshot.clear()
                                     
                             else:
                                 #log the error
@@ -594,14 +598,13 @@ class dml:
             self.reply_message[new_reply_id] = None
 
             # create the snaphsot structure
-            s = Snapshot(handler=handler)
-            # fill pv_list with the name of the pv without pva:// or ca://
-            s.pv_list = [
-                self.parse_pv_url(pv_uri)[1] for pv_uri in properties.pv_uri_list
-            ]
-            s.properties = properties
-            s.publishing_topic = None
-
+            s = Snapshot(
+                handler=handler,
+                pv_list = [ self.parse_pv_url(pv_uri)[1] for pv_uri in properties.pv_uri_list ],
+                properties = properties
+            )
+            s.init()
+            
             # send message to k2eg fto execute snapshot
             self.__broker.send_repeating_snapshot_command(
                 properties,

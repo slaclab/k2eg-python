@@ -189,7 +189,10 @@ Creates a recurring snapshot for a list of PVs.
     - **`time_window`** (`int`, optional):  
       Time window in milliseconds for the snapshot acquisition.
     - **`repeat_delay`** (`int`, optional):  
-      Delay in milliseconds between consecutive snapshots.
+      Delay in milliseconds between consecutive snapshots [not yet implemented].
+    - **`sub_push_delay_msec`** (`int`, optional):  
+      Specifies a sub-interval (in milliseconds) within the overall `time_window`. Instead of waiting until the end of the `time_window` to send all acquired events, the gateway will push partial results to the client every `sub_push_delay_msec`.  
+      This reduces latency for large snapshots, especially when monitoring many PVs that update at a high rate, by delivering data incrementally rather than in a single batch at the end of the window.
     - **`triggered`** (`bool`, optional):  
       If `True`, the snapshot is triggered manually using `snapshost_trigger()`. If `False`, snapshots are taken automatically.
     - **Other fields**:  

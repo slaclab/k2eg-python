@@ -236,10 +236,10 @@ class dml:
                                 #get the timestsamp and iteration
                                 snapshot.timestamp = decoded_message.get('timestamp', None)
                                 snapshot.interation = decoded_message.get('iter_index', 0)
-                                logging.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] messages {len(snapshot.results)}")
+                                logging.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] and iteration {snapshot.interation}")
                             elif message_type == 1 and (snapshot.state  == SnapshotState.HEADER_RECEVED or snapshot.state  == SnapshotState.DATA_ACQUIRING):
                                 ## we are acquireing data for the snapshtot
-                                snapshot.state  == SnapshotState.DATA_ACQUIRING
+                                snapshot.state = SnapshotState.DATA_ACQUIRING
                                 # remove the timestamp, iter_index, message_type and message_size from the message
                                 decoded_message.pop('timestamp', None)
                                 decoded_message.pop('iter_index', None)
@@ -252,12 +252,12 @@ class dml:
                                     if pv_name not in snapshot.results:
                                         snapshot.results[pv_name] = []
                                     snapshot.results[pv_name].append(value)
-                                logging.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {len(snapshot.results)}")
+                                logging.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {len(snapshot.results)} and iteration {snapshot.interation}")
                             elif message_type == 2 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
                                 # we got the completion message on snapshot that we are managing         
                                 # renew the snapshot
                                 snapshot.state = SnapshotState.TAIL_RECEIVED
-                                logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] messages {len(snapshot.results)}")  
+                                logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] messages {len(snapshot.results)} and iteration {snapshot.interation}")  
                                 # Prepare a dictionary with only PV values, inter_index, and timestamp
                                 handler_data = {}
                                 # Add 'iter_index' and 'timestamp' if present and not already set
@@ -281,7 +281,7 @@ class dml:
                             else:
                                 #log the error
                                 logging.error(
-                                    f"Error during snapshot {msg_id} with message type {message_type} and state {snapshot.state}"
+                                    f"Error during snapshot {msg_id} with message type {message_type} and state {snapshot.state} and iteration {snapshot.interation} and timestamp {snapshot.timestamp}"
                                 )
 
 

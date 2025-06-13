@@ -407,3 +407,53 @@ def test_recurring_snapshot_timed_buffered():
     finally:
         k.snapshot_stop(snapshot_name)
         time.sleep(1)
+        
+
+def test_recurring_snapshot_time_buffered_with_sub_push():
+    retry = 0
+    snapshot_name = "snap_1"
+    received_snapshot:list[Snapshot] = []
+    def snapshot_handler(id, snapshot_data:Dict[str, Any]):
+        nonlocal snapshot_name
+        nonlocal received_snapshot
+        if snapshot_name == id:
+            received_snapshot.append(snapshot_data)
+            
+    try:
+        result = k.snapshot_stop(snapshot_name)
+        print(result)
+        time.sleep(1)
+        result = k.snapshot_recurring(
+            SnapshotProperties(
+                snapshot_name = snapshot_name,
+                time_window = 4000,
+                repeat_delay = 0,
+                sub_push_delay_msec = 1000,
+                pv_uri_list = ['pva://channel:ramp:ramp'],
+                triggered=False,
+                type=SnapshotType.TIMED_BUFFERED,
+                pv_field_filter_list = ['value'],
+            ),
+            handler=snapshot_handler,
+            timeout=10,
+        )
+        print(result)
+        while (len(received_snapshot) == 0 ) and retry < 5:
+            retry = retry+1
+            time.sleep(5)
+        k.snapshot_stop(snapshot_name)
+        time.sleep(1)
+        # received_snapshot shuld be a dict with the snapshot data
+        assert len(received_snapshot) > 0, "snapshot should not be None"
+        #print a json description for the dictionary
+        print(received_snapshot[0])
+        assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
+        assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
+        assert 'channel:ramp:ramp' in received_snapshot[0] and isinstance(received_snapshot[0]['channel:ramp:ramp'], list), "variable:a need be contained into the snapshot"
+        # channel:ramp:ramp need to have four values
+        assert len(received_snapshot[0]['channel:ramp:ramp']) >= 4, "channel:ramp:ramp should have four values"
+    except Exception as e:
+        assert False, f"An error occured: {e}"
+    finally:
+        k.snapshot_stop(snapshot_name)
+        time.sleep(1)

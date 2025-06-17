@@ -1,6 +1,5 @@
-import pytest
 import msgpack
-from k2eg.serialization import MessagePackSerializable, Scalar, Vector, Generic, NTTable
+from k2eg.serialization import Scalar, Vector, Generic, NTTable
 
 def test_scalar():
     s = Scalar(payload=23.5)

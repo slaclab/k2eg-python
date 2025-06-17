@@ -66,7 +66,7 @@ def test_exception_on_get_with_bad_protocol():
                     k.get('unkonwn://', timeout=0.5)
 
 def test_k2eg_get():
-    get_value = k.get('pva://channel:ramp:ramp')
+    get_value = k.get('pva://channel:ramp:ramp', timeout=2.0)
     assert get_value is not None, "value should not be None"
 
 def test_k2eg_get_timeout():

@@ -1,4 +1,5 @@
 import msgpack
+import base64
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple, Union
@@ -13,6 +14,10 @@ class MessagePackSerializable(ABC):
     def to_msgpack(self) -> bytes:
         """Pack `to_dict()` into msgpack bytes."""
         return msgpack.packb(self.to_dict(), use_bin_type=True)
+    
+    def to_base_64(self) -> str:
+        """Pack `to_dict()` into msgpack bytes, then base64 encode."""
+        return base64.b64encode(self.to_msgpack()).decode('utf-8')
 
 @dataclass
 class Scalar(MessagePackSerializable):

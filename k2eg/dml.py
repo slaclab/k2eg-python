@@ -4,11 +4,13 @@ import msgpack
 import logging
 import threading
 import datetime
+
 from enum import Enum
 from time import sleep
 from readerwriterlock import rwlock
 from confluent_kafka import KafkaError
 from k2eg.broker import Broker, SnapshotProperties
+from k2eg.serialization import MessagePackSerializable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, List, Dict, Any
@@ -379,7 +381,7 @@ class dml:
         else:
             return result
                 
-    def put(self, pv_url: str, value: any, timeout: float = None):
+    def put(self, pv_url: str, value: MessagePackSerializable, timeout: float = None):
         """ Set the value for a single pv
         Args:
             pv_name   (str): is the name of the pv
@@ -405,7 +407,7 @@ class dml:
             # send message to k2eg
             self.__broker.send_put_command(
                 pv_url,
-                value,
+                value.to_base_64(),
                 new_reply_id
             )
             while(not fetched):

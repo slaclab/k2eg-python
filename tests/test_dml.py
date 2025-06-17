@@ -8,6 +8,7 @@ from k2eg.dml import Snapshot, _filter_pv_uri
 import time
 import pytest
 from unittest import TestCase
+from k2eg.serialization import Scalar
 
 k: k2eg.dml = None
 TestCase.maxDiff = None
@@ -132,13 +133,13 @@ def test_k2eg_monitor_many():
     assert received_message_b is not False, "value should not be None"
 
 def test_put():
-    k.put("pva://variable:a", 0)
-    k.put("pva://variable:b", 0)
+    k.put("pva://variable:a", Scalar(payload=0))
+    k.put("pva://variable:b", Scalar(payload=0))
     time.sleep(1)
     res_get = k.get("pva://variable:sum")
     assert res_get['value'] == 0, "value should not be 0"
-    k.put("pva://variable:a", 2)
-    k.put("pva://variable:b", 2)
+    k.put("pva://variable:a", Scalar(payload=2))
+    k.put("pva://variable:b", Scalar(payload=2))
     #give some time to ioc to update
     time.sleep(1)
     res_get = k.get("pva://variable:sum")
@@ -146,8 +147,8 @@ def test_put():
 
 def test_multi_threading_put():
     put_dic={
-        "pva://variable:a": 0,
-        "pva://variable:b": 0
+        "pva://variable:a": Scalar(payload=0),
+        "pva://variable:b": Scalar(payload=0)
     }
     with ThreadPoolExecutor(10) as executor:
         for key, value in put_dic.items():
@@ -156,8 +157,8 @@ def test_multi_threading_put():
     res_get = k.get("pva://variable:sum")
     assert res_get['value'] == 0, "value should not be 0"
     put_dic={
-        "pva://variable:a": 2,
-        "pva://variable:b": 2
+        "pva://variable:a": Scalar(payload=2),
+        "pva://variable:b": Scalar(payload=2)
     }
     with ThreadPoolExecutor(10) as executor:
         for key, value in put_dic.items():
@@ -182,7 +183,7 @@ def test_put_timeout():
 
 def test_put_wrong_device_timeout():
     with pytest.raises(k2eg.OperationError):
-                    k.put("pva://bad:pv:name", 0)
+                    k.put("pva://bad:pv:name", Scalar(payload=0))
 
 def test_snapshot_on_simple_fixed_pv():
     retry = 0

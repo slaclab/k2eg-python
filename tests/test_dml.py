@@ -178,7 +178,7 @@ def put(key, value):
 def test_put_timeout():
     with pytest.raises(k2eg.OperationTimeout, 
                     match=r"Timeout.*"):
-                    k.put("pva://bad:pv:name", 0, timeout=0.5)
+                    k.put("pva://bad:pv:name", Scalar(0), timeout=0.5)
 
 
 def test_put_wrong_device_timeout():

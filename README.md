@@ -116,15 +116,36 @@ Sets the value for a single PV, supporting advanced types such as scalars, vecto
 from k2eg.serialization import Scalar, Vector, NTTable
 
 # Scalar value
-client.put("pva://my:pv", Scalar("my:pv", 42))
+client.put("pva://my:pv", Scalar("value", 42))
 
 # Vector value
-client.put("pva://my:array", Vector("my:array", [1, 2, 3, 4]))
+client.put("pva://my:array", Vector([1, 2, 3, 4])) #the default key='value' is implicit
 
 # NTTable value
-table = NTTable("my:table")
-table.add_column("col1", [1, 2, 3])
-table.add_column("col2", ["a", "b", "c"])
+ nt_labels = [
+        "element", "device_name", "s", "z", "length", "p0c",
+        "alpha_x", "beta_x", "eta_x", "etap_x", "psi_x",
+        "alpha_y", "beta_y", "eta_y", "etap_y", "psi_y"
+    ]
+table = NTTable(labels=nt_labels)
+
+# 3) Add each column of data
+table.set_column("element",["SOL9000", "XC99", "YC99"])
+table.set_column("device_name",["SOL:IN20:111", "XCOR:IN20:112", "YCOR:IN20:113"])
+table.set_column("s", [0.0, 0.0, 0.0])
+table.set_column("z", [0.0, 0.0, 0.0])
+table.set_column("length", [0.0, 0.0, 0.0])
+table.set_column("p0c", [0.0, 0.0, 0.0])
+table.set_column("alpha_x", [0.0, 0.0, 0.0])
+table.set_column("beta_x", [0.0, 0.0, 0.0])
+table.set_column("eta_x", [0.0, 0.0, 0.0])
+table.set_column("etap_x", [0.0, 0.0, 0.0])
+table.set_column("psi_x", [0.0, 0.0, 0.0])
+table.set_column("alpha_y", [0.0, 0.0, 0.0])
+table.set_column("beta_y", [0.0, 0.0, 0.0])
+table.set_column("eta_y", [0.0, 0.0, 0.0])
+table.set_column("etap_y", [0.0, 0.0, 0.0])
+table.set_column("psi_y", [0.0, 0.0, 0.0])
 client.put("pva://my:table", table)
 ```
 > **Note:**  

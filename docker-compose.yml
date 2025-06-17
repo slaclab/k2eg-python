@@ -30,9 +30,19 @@ services:
       - consul_data:/consul/data  # Optional persistent storage for Consul data
 
   epics_pva:
-    image: ghcr.io/bisegni/epics-base-docker-image:main
+    build:
+      context: .
+      dockerfile: .devcontainer/DockerfileDevContainer.epics
+    command: 
+        - /bin/bash
+        - -c
+        - |
+          tmux new-session -d "source /opt/epics-var.sh; softIocPVA -d /db/softioc.db"
+          tmux new-session -d "source /opt/epics-var.sh; python3 /db/k2eg-nttable-ioc.py"
+          tail -f /dev/null
     volumes:
-      - ./tests/epics-test.db:/db/softioc.db
+      - ../tests/epics-test.db:/db/softioc.db
+      - ../tests/k2eg-nttable-ioc.py:/db/k2eg-nttable-ioc.py
 
   k2eg:
     image: ghcr.io/slaclab/k2eg/ubuntu:latest

@@ -1,6 +1,6 @@
 import numpy as np
 import time
-from p4p.nt import NTTable, NTScalar, NTNDArray
+from p4p.nt import NTTable, NTNDArray
 from p4p.server import Server as PVAServer
 from p4p.server.thread import SharedPV
 
@@ -46,4 +46,4 @@ image_pv = SharedPV(handler=Handler(), nt=NTNDArray(), initial=np.zeros(1))
 # Make the PVA Server.  This is where we define the names for each of the PVs we defined above.
 # By using "PVAServer.forever", the server immediately starts running, and doesn't stop until you
 # kill it.
-pva_server = PVAServer.forever(providers=[{f"K2EG:TEST:TWISS": live_twiss_pv, "K2EG:TEST:IMAGE": image_pv}])
+pva_server = PVAServer.forever(providers=[{"K2EG:TEST:TWISS": live_twiss_pv, "K2EG:TEST:IMAGE": image_pv}])

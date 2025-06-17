@@ -93,20 +93,42 @@ Performs a synchronous get operation on a PV.
 
 ---
 
-#### `put(pv_url: str, value: any, timeout: float = None)`
-Sets the value for a single PV.
+#### `put(pv_url: str, value: MessagePackSerializable, timeout: float = None)`
+Sets the value for a single PV, supporting advanced types such as scalars, vectors, and structured tables.
 
 - **Parameters:**
-  - `pv_url` (str): The PV URI.
-  - `value` (any): The value to set.
-  - `timeout` (float, optional): Timeout in seconds.
+  - `pv_url` (`str`): The PV URI (e.g., `"pva://my:pv"`).
+  - `value` (`MessagePackSerializable`):  
+    An instance of a class derived from `MessagePackSerializable` (such as `Scalar`, `Vector`, `NTTable`, or `Generic`).  
+    This allows you to send not only simple values, but also complex data structures (e.g., arrays or tables) to the PV.  
+    The object will be automatically serialized to MessagePack before being sent.
+  - `timeout` (`float`, optional): Timeout in seconds for the operation.
 
 - **Returns:**  
-  - The result of the put operation.
+  - The result of the put operation (typically a confirmation or status object).
 
 - **Raises:**  
   - `ValueError`: If the protocol is not 'pva' or 'ca'.
   - `OperationTimeout`: If the operation times out.
+
+**Usage Example:**
+```python
+from k2eg.serialization import Scalar, Vector, NTTable
+
+# Scalar value
+client.put("pva://my:pv", Scalar("my:pv", 42))
+
+# Vector value
+client.put("pva://my:array", Vector("my:array", [1, 2, 3, 4]))
+
+# NTTable value
+table = NTTable("my:table")
+table.add_column("col1", [1, 2, 3])
+table.add_column("col2", ["a", "b", "c"])
+client.put("pva://my:table", table)
+```
+> **Note:**  
+> The `MessagePackSerializable` object passed as the `value` parameter must contain a `key` attribute, which identifies the EPICS field (PV) to update, and a corresponding value (or structure) representing the data to be written to that field. This ensures that both the target PV and the data to update are clearly specified and correctly serialized
 
 ---
 

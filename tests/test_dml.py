@@ -8,7 +8,7 @@ from k2eg.dml import Snapshot, _filter_pv_uri
 import time
 import pytest
 from unittest import TestCase
-from k2eg.serialization import Scalar, NTTable
+from k2eg.serialization import Scalar
 
 k: k2eg.dml = None
 TestCase.maxDiff = None

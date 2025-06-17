@@ -8,7 +8,7 @@ from k2eg.dml import Snapshot, _filter_pv_uri
 import time
 import pytest
 from unittest import TestCase
-from k2eg.serialization import Scalar
+from k2eg.serialization import Scalar, NTTable
 
 k: k2eg.dml = None
 TestCase.maxDiff = None
@@ -174,12 +174,73 @@ def put(key, value):
         print(f"Put {key} with value {value}")
     except Exception as e:
         print(f"An error occured: {e}")
+    
 
+    
 def test_put_timeout():
     with pytest.raises(k2eg.OperationTimeout, 
                     match=r"Timeout.*"):
                     k.put("pva://bad:pv:name", Scalar(0), timeout=0.5)
 
+def test_put_nttable():
+    nt_labels = [
+        "element", "device_name", "s", "z", "length", "p0c",
+        "alpha_x", "beta_x", "eta_x", "etap_x", "psi_x",
+        "alpha_y", "beta_y", "eta_y", "etap_y", "psi_y"
+    ]
+    table = NTTable(labels=nt_labels)
+
+    # 3) Add each column of data
+    table.set_column("element",["SOL9000", "XC99", "YC99"])
+    table.set_column("device_name",["SOL:IN20:111", "XCOR:IN20:112", "YCOR:IN20:113"])
+    table.set_column("s", [0.0, 0.0, 0.0])
+    table.set_column("z", [0.0, 0.0, 0.0])
+    table.set_column("length", [0.0, 0.0, 0.0])
+    table.set_column("p0c", [0.0, 0.0, 0.0])
+    table.set_column("alpha_x", [0.0, 0.0, 0.0])
+    table.set_column("beta_x", [0.0, 0.0, 0.0])
+    table.set_column("eta_x", [0.0, 0.0, 0.0])
+    table.set_column("etap_x", [0.0, 0.0, 0.0])
+    table.set_column("psi_x", [0.0, 0.0, 0.0])
+    table.set_column("alpha_y", [0.0, 0.0, 0.0])
+    table.set_column("beta_y", [0.0, 0.0, 0.0])
+    table.set_column("eta_y", [0.0, 0.0, 0.0])
+    table.set_column("etap_y", [0.0, 0.0, 0.0])
+    table.set_column("psi_y", [0.0, 0.0, 0.0])
+    t_dictionary = table.to_dict()
+    k.put("pva://K2EG:TEST:TWISS", table)
+    # get the value to check if all ahas been set
+    res_get = k.get("pva://K2EG:TEST:TWISS")
+    print(res_get)
+    assert res_get is not None, "value should not be None"
+    assert res_get['value'] is not None, "value should not be None"
+    assert res_get['value'] == t_dictionary['value'], "value should be the same as the one putted"
+    
+    # now set the vallue to increment of 1 where possible
+    table.set_column("element",["1", "2", "3"])
+    table.set_column("device_name",["1", "2", "3"])
+    table.set_column("s", [1.0, 1.0, 1.0])
+    table.set_column("z", [1.0, 1.0, 1.0])
+    table.set_column("length", [1.0, 1.0, 1.0])
+    table.set_column("p0c", [1.0, 1.0, 1.0])
+    table.set_column("alpha_x", [1.0, 1.0, 1.0])
+    table.set_column("beta_x", [1.0, 1.0, 1.0])
+    table.set_column("eta_x", [1.0, 1.0, 1.0])
+    table.set_column("etap_x", [1.0, 1.0, 1.0])
+    table.set_column("psi_x", [1.0, 1.0, 1.0])
+    table.set_column("alpha_y", [1.0, 1.0, 1.0])
+    table.set_column("beta_y", [1.0, 1.0, 1.0])
+    table.set_column("eta_y", [1.0, 1.0, 1.0])
+    table.set_column("etap_y", [1.0, 1.0, 1.0])
+    table.set_column("psi_y", [1.0, 1.0, 1.0])
+    updated_t_dictionary = table.to_dict()
+    k.put("pva://K2EG:TEST:TWISS", table)
+    # get the value to check if all ahas been set
+    res_get = k.get("pva://K2EG:TEST:TWISS")
+    print(res_get)
+    assert res_get is not None, "value should not be None"
+    assert res_get['value'] is not None, "value should not be None"
+    assert res_get['value'] == updated_t_dictionary['value'], "value should be the same as the one putted"
 
 def test_put_wrong_device_timeout():
     with pytest.raises(k2eg.OperationError):

@@ -60,7 +60,7 @@ class NTTable(MessagePackSerializable):
     """
     key: str = field(default="value")
     labels: List[str] = field(default_factory=list)
-    payload: List[List[Any]] = field(default_factory=list)
+    payload: Dict[str, any] = field(default_factory=dict)
 
     def wrap(
         self,
@@ -84,28 +84,15 @@ class NTTable(MessagePackSerializable):
             self.values.append(row)
         return self
 
-    def add_column(self, label: str, data: List[Any]) -> "NTTable":
+    def set_column(self, label: str, data: List[Any]) -> "NTTable":
         """
-        Add a new column to the table.
-        
-        - label: the column name
-        - data: list of values, one per row
-        - fmt: optional format specifier for this column
+        Update values for an existing column.
+        - label: the column name (must already exist)
+        - data: new list of values, one per row (length must match)
         """
-        # If table is empty, initialize values with one-element rows
-        if not self.payload:
-            for val in data:
-                self.payload.append([val])
-        else:
-            if len(data) != len(self.payload):
-                raise ValueError(
-                    f"Column length {len(data)} does not match row count {len(self.payload)}"
-                )
-            for row, val in zip(self.payload, data):
-                row.append(val)
-
-        # Register the new column
-        self.labels.append(label)
+        if label not in self.labels:
+            raise ValueError(f"Column label '{label}' is not defined")
+        self.payload[label] = data
         return self
 
     def to_dict(self) -> Dict[str, Any]:

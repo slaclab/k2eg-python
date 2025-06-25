@@ -264,7 +264,10 @@ class dml:
                                 handler_data = {}
                                 # Add 'iter_index' and 'timestamp' if present and not already set
                                 handler_data["iteration"] = snapshot.interation
-                                handler_data["timestamp"] =  snapshot.timestamp
+                                # timetamp of the header
+                                handler_data["hedaer_timestamp"] = snapshot.timestamp
+                                # timstamp of the tail
+                                handler_data["tail_timestamp"] = decoded_message.get('timestamp', snapshot.timestamp)
                                 # add key and value from snapshot.results
                                 # to the handler data
                                 for pv_name, values in snapshot.results.items():

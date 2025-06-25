@@ -315,7 +315,8 @@ def test_recurring_snapshot():
         assert len(received_snapshot) > 0, "snapshot should not be None"
         #print a json description for the dictionary
         print(received_snapshot[0])
-        assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
+        assert received_snapshot[0]['header_timestamp'] > 0, "header_timestamp should be valid"
+        assert received_snapshot[0]['tail_timestamp'] > 0, "tail_timestamp should be valid"
         assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
         assert 'variable:a' in received_snapshot[0] and isinstance(received_snapshot[0]['variable:a'], list), "variable:a need be contained into the snapshot"
         assert 'variable:b' in received_snapshot[0] and isinstance(received_snapshot[1]['variable:a'], list), "variable:b need be contained into the snapshot"
@@ -323,7 +324,6 @@ def test_recurring_snapshot():
         assert False, f"An error occured: {e}"
     finally:
         k.snapshot_stop(snapshot_name)
-        time.sleep(1)
         
         
 def test_recurring_snapshot_check_for_empty_pv():
@@ -413,7 +413,8 @@ def test_recurring_snapshot_triggered():
         k.snapshot_stop(snapshot_name)
         time.sleep(1)
         assert len(received_snapshot) == 2 , "snapshot should only one"
-        assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
+        assert received_snapshot[0]['header_timestamp'] > 0, "header_timestamp should be valid"
+        assert received_snapshot[0]['tail_timestamp'] > 0, "tail_timestamp should be valid"
         assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
         assert 'variable:a' in received_snapshot[0] and isinstance(received_snapshot[0]['variable:a'], list), "variable:a need be contained into the snapshot"
         assert 'variable:b' in received_snapshot[0] and isinstance(received_snapshot[1]['variable:a'], list), "variable:b need be contained into the snapshot"
@@ -460,7 +461,8 @@ def test_recurring_snapshot_timed_buffered():
         assert len(received_snapshot) > 0, "snapshot should not be None"
         #print a json description for the dictionary
         print(received_snapshot[0])
-        assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
+        assert received_snapshot[0]['header_timestamp'] > 0, "header_timestamp should be valid"
+        assert received_snapshot[0]['tail_timestamp'] > 0, "tail_timestamp should be valid"
         assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
         assert 'channel:ramp:ramp' in received_snapshot[0] and isinstance(received_snapshot[0]['channel:ramp:ramp'], list), "variable:a need be contained into the snapshot"
         assert 'channel:ramp:rampa' in received_snapshot[0] and isinstance(received_snapshot[0]['channel:ramp:rampa'], list), "variable:b need be contained into the snapshot"
@@ -509,7 +511,8 @@ def test_recurring_snapshot_time_buffered_with_sub_push():
         assert len(received_snapshot) > 0, "snapshot should not be None"
         #print a json description for the dictionary
         print(received_snapshot[0])
-        assert received_snapshot[0]['timestamp'] > 0, "timestamp should be valid"
+        assert received_snapshot[0]['header_timestamp'] > 0, "header_timestamp should be valid"
+        assert received_snapshot[0]['tail_timestamp'] > 0, "tail_timestamp should be valid"
         assert received_snapshot[0]['iteration'] > 0, "interation should be valid"
         assert 'channel:ramp:ramp' in received_snapshot[0] and isinstance(received_snapshot[0]['channel:ramp:ramp'], list), "variable:a need be contained into the snapshot"
         # channel:ramp:ramp need to have four values

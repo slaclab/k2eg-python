@@ -509,7 +509,9 @@ def test_recurring_snapshot_time_buffered_with_sub_push():
         print(result)
         # while (len(received_snapshot) == 0 ) and retry < 5:
         #     retry = retry+1
-        time.sleep(30)
+        while (len(received_snapshot) == 0 ) and retry < 5:
+            retry = retry+1
+            time.sleep(1)
         k.snapshot_stop(snapshot_name)
         time.sleep(1)
         print(f"received_snapshot: {len(received_snapshot)}")

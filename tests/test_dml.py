@@ -495,9 +495,9 @@ def test_recurring_snapshot_time_buffered_with_sub_push():
         result = k.snapshot_recurring(
             SnapshotProperties(
                 snapshot_name = snapshot_name,
-                time_window = 1000,
+                time_window = 5000,
                 repeat_delay = 0,
-                sub_push_delay_msec = 50,
+                sub_push_delay_msec = 1000,
                 pv_uri_list = ['pva://channel:ramp:ramp'],
                 triggered=False,
                 type=SnapshotType.TIMED_BUFFERED,

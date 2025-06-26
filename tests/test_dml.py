@@ -480,6 +480,7 @@ def test_recurring_snapshot_time_buffered_with_sub_push():
     def snapshot_handler(id, snapshot_data:Dict[str, Any]):
         nonlocal snapshot_name
         nonlocal received_snapshot
+        print(f"snapshot_handler called with id: {id}")
         if snapshot_name == id:
             received_snapshot.append(snapshot_data)
             
@@ -490,10 +491,10 @@ def test_recurring_snapshot_time_buffered_with_sub_push():
         result = k.snapshot_recurring(
             SnapshotProperties(
                 snapshot_name = snapshot_name,
-                time_window = 4000,
+                time_window = 1000,
                 repeat_delay = 0,
-                sub_push_delay_msec = 1000,
-                pv_uri_list = ['pva://channel:ramp:ramp'],
+                sub_push_delay_msec = 500,
+                pv_uri_list = ['ca://channel:ramp:ramp'],
                 triggered=False,
                 type=SnapshotType.TIMED_BUFFERED,
                 pv_field_filter_list = ['value'],

@@ -185,6 +185,12 @@ class Broker:
             'auto.offset.reset': 'latest',
             'enable.auto.commit': 'true',
             'topic.metadata.refresh.interval.ms': '60000',
+            
+            'fetch.min.bytes': 1,              # Minimum bytes to fetch (lower = faster)
+            'fetch.wait.max.ms': 5,            # Max wait time (lower = faster, higher CPU)
+            'session.timeout.ms': 30000,       # Session timeout
+            'heartbeat.interval.ms': 3000,     # Heartbeat interval
+            'max.poll.interval.ms': 300000,    # Max poll interval
         }
         if enable_kafka_debug is True:
             config_consumer['debug'] = 'consumer,fetch'
@@ -292,7 +298,7 @@ class Broker:
         except KafkaException as e:
             logging.error(e)
        
-    def get_next_message(self, timeout = 0.300):
+    def get_next_message(self, timeout = 0.01):
         message = self.__consumer.poll(timeout=timeout)
         # give a chanche to update metadata ofr pending topics
         self.__topic_checker.update_metadata(self.__consumer)

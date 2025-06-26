@@ -279,7 +279,7 @@ def test_snapshot_on_simple_fixed_pv_sync():
         assert 'variable:b' in received_snapshot, "value should not be None"
     except Exception as e:
         assert False, f"An error occured: {e}"
-        
+
 def test_recurring_snapshot():
     retry = 0
     snapshot_name = "snap_1"
@@ -472,7 +472,10 @@ def test_recurring_snapshot_timed_buffered():
         k.snapshot_stop(snapshot_name)
         time.sleep(1)
         
-
+def read_pv_list(filename):
+    with open(filename, 'r') as f:
+        return [line.strip() for line in f if line.strip()]
+    
 def test_recurring_snapshot_time_buffered_with_sub_push():
     retry = 0
     snapshot_name = "snap_1"
@@ -488,12 +491,13 @@ def test_recurring_snapshot_time_buffered_with_sub_push():
         result = k.snapshot_stop(snapshot_name)
         print(result)
         time.sleep(1)
+        # pv_list = read_pv_list('pv_list.txt')
         result = k.snapshot_recurring(
             SnapshotProperties(
                 snapshot_name = snapshot_name,
                 time_window = 1000,
                 repeat_delay = 0,
-                sub_push_delay_msec = 500,
+                sub_push_delay_msec = 50,
                 pv_uri_list = ['ca://channel:ramp:ramp'],
                 triggered=False,
                 type=SnapshotType.TIMED_BUFFERED,
@@ -503,15 +507,16 @@ def test_recurring_snapshot_time_buffered_with_sub_push():
             timeout=10,
         )
         print(result)
-        while (len(received_snapshot) == 0 ) and retry < 5:
-            retry = retry+1
-            time.sleep(5)
+        # while (len(received_snapshot) == 0 ) and retry < 5:
+        #     retry = retry+1
+        time.sleep(30)
         k.snapshot_stop(snapshot_name)
         time.sleep(1)
+        print(f"received_snapshot: {len(received_snapshot)}")
         # received_snapshot shuld be a dict with the snapshot data
         assert len(received_snapshot) > 0, "snapshot should not be None"
         #print a json description for the dictionary
-        print(received_snapshot[0])
+        # print(received_snapshot[0])
         assert received_snapshot[0]['header_timestamp'] > 0, "header_timestamp should be valid"
         assert received_snapshot[0]['tail_timestamp'] > 0, "tail_timestamp should be valid"
         assert received_snapshot[0]['iteration'] > 0, "interation should be valid"

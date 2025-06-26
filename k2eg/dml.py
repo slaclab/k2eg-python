@@ -69,7 +69,8 @@ class dml:
             self, 
             environment_id: str, 
             app_name: str,
-            group_name: str = None):
+            group_name: str = None,
+            poll_timeout: float = 0.01):
         if app_name is None:
             raise ValueError(
                 "The app name is mandatory"
@@ -79,7 +80,7 @@ class dml:
         self.__broker = Broker(environment_id, app_name, group_name)
         self.__lock = rwlock.RWLockFairD()
         self.__reply_partition_assigned = threading.Event()
-        
+        self.poll_timeout = poll_timeout
         #reset to listen form now
         self.__consume_data = True
         self.__thread = threading.Thread(
@@ -93,6 +94,10 @@ class dml:
         #contain a vector for each reply id where snapshot are stored
         self.reply_snapsthot_message = {}
         self.reply_recurring_snapsthot_message = {}
+        logging.info(
+            f"Created dml instance for environment '{environment_id}' "+
+            f"and application '{app_name}' with group '{group_name}' with poll timeout '{poll_timeout}'"
+        )
 
     def __del__(self):
         # Perform cleanup operations when the instance is deleted
@@ -167,7 +172,7 @@ class dml:
         """
         with  ThreadPoolExecutor(max_workers=10) as executor:
             while self.__consume_data:
-                message = self.__broker.get_next_message()
+                message = self.__broker.get_next_message(self.poll_timeout)
                 if message is None: 
                     continue
                 if message.error():
@@ -260,7 +265,7 @@ class dml:
                                         if pv_name not in snapshot.results:
                                             snapshot.results[pv_name] = []
                                         snapshot.results[pv_name].append(value)
-                                    logging.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {sum(len(v) for v in snapshot.results.values())} and iteration {snapshot.interation}")
+                                    #logging.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {sum(len(v) for v in snapshot.results.values())} and iteration {snapshot.interation}")
                                 else:
                                     logging.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
                                     
@@ -268,8 +273,6 @@ class dml:
                                 # Only process tail messages that match the current iteration
                                 if message_iteration == snapshot.interation:
                                     snapshot.state = SnapshotState.TAIL_RECEIVED
-                                    logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] messages {sum(len(v) for v in snapshot.results.values())} and iteration {snapshot.interation}")
-                                    
                                     # Build handler data with metadata
                                     tail_ts = decoded_message.get('timestamp', None)
                                     handler_data = {
@@ -283,12 +286,14 @@ class dml:
                                         if pv_name in snapshot.results:
                                             handler_data[pv_name] = snapshot.results[pv_name]
                                     
+                                    logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] fromm {len(handler_data)} PVs with {sum(len(v) for v in snapshot.results.values())} messages on iteration {snapshot.interation}")
                                     # Call handler asynchronously
                                     executor.submit(
                                         snapshot.handler,
                                         from_topic,
                                         handler_data
                                     )
+                                    snapshot.clear()  # Clear results for the next iteration
                                 else:
                                     logging.debug(f"Ignoring tail message from iteration {message_iteration}, current iteration is {snapshot.interation}")
                             else:

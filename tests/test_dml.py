@@ -498,7 +498,7 @@ def test_recurring_snapshot_time_buffered_with_sub_push():
                 time_window = 1000,
                 repeat_delay = 0,
                 sub_push_delay_msec = 50,
-                pv_uri_list = ['ca://channel:ramp:ramp'],
+                pv_uri_list = ['pva://channel:ramp:ramp'],
                 triggered=False,
                 type=SnapshotType.TIMED_BUFFERED,
                 pv_field_filter_list = ['value'],

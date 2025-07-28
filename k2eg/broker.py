@@ -11,6 +11,8 @@ from enum import Enum
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END, OFFSET_BEGINNING
 from confluent_kafka import KafkaError, KafkaException
 
+logger = logging.getLogger(__name__) 
+
 class SnapshotType(Enum):
     """
     Enum to define the type of snapshot
@@ -88,16 +90,16 @@ class TopicChecker:
 
     def add_topic(self, topic_name):
         with self.__mutex:
-            logging.debug(f"Add topic {topic_name} to checker")
+            logger.debug(f"Add topic {topic_name} to checker")
             self.__topics_to_check.append(topic_name)
 
     def remove_topic(self, topic_name):
         with self.__mutex:
             if topic_name in self.__topics_to_check:
-                logging.debug(f"remove topic {topic_name} to checker")
+                logger.debug(f"remove topic {topic_name} to checker")
                 self.__topics_to_check.remove(topic_name)
             else:
-                logging.debug(f"topic {topic_name} not in checker")
+                logger.debug(f"topic {topic_name} not in checker")
 
     def update_metadata(self, consumer: Consumer) -> bool:
         to_check =  self.__check_timeout is None or \
@@ -107,11 +109,11 @@ class TopicChecker:
             with self.__mutex:
                 for t in self.__topics_to_check:
                     found = self.__check_for_topic(t, consumer)
-                    logging.debug(f"Check for topic {t} => found:{found}")
+                    logger.debug(f"Check for topic {t} => found:{found}")
                     # low, high = consumer.get_watermark_offsets(t)
-                    # logging.debug(f'Found max and min [{high},{low}] index for topic: {t}')
+                    # logger.debug(f'Found max and min [{high},{low}] index for topic: {t}')
                     if found:
-                        logging.debug(f"Remove topic {t} from checker")
+                        logger.debug(f"Remove topic {t} from checker")
                         self.__topics_to_check.remove(t)
 
                 if(len(self.__topics_to_check)>0):
@@ -219,35 +221,35 @@ class Broker:
         self.__consumer.poll(1.0)
         assigned_topics = self.__consumer.assignment()
         for t in assigned_topics:
-            logging.debug(f'latest assigned topic: {t}')
+            logger.debug(f'latest assigned topic: {t}')
         self.__consumer.unsubscribe()
 
     # point always to the end of the topic
     def __on_assign(self, consumer, partitions):
         for p in partitions:
-            logging.debug(f"Joined topic {p.topic} with partition {p.partition}")
+            logger.debug(f"Joined topic {p.topic} with partition {p.partition}")
             if p.topic == self.__reply_topic:
                 self.__reply_topic_joined = True
                 self.__reply_partition_assigned.set()
                 #if p.offset==-1 or p.offset==-1001:
-                logging.debug(f'Force to reading from the end for topic: {p.topic}')
+                logger.debug(f'Force to reading from the end for topic: {p.topic}')
                 #p.offset = OFFSET_END
             else:
                 try:
                     low, high = consumer.get_watermark_offsets(p)
-                    logging.debug(f'Found max and min [{high},{low}] index for topic: {p.topic}')
+                    logger.debug(f'Found max and min [{high},{low}] index for topic: {p.topic}')
                     # in this case we have to go one index behing to start reading from the
                     # last element in the queue
                     if high >= 1:
                         # new_offset = high
-                        logging.debug(f"offset for topic '{p.topic}' is '{high}'")
+                        logger.debug(f"offset for topic '{p.topic}' is '{high}'")
                         p.offset = OFFSET_END
                     elif high < 0:
                         p.offset = OFFSET_END
                     else:
                         p.offset = OFFSET_BEGINNING
                 except Exception as e:
-                    logging.debug(f'got exception on metadata refresh: {e}')
+                    logger.debug(f'got exception on metadata refresh: {e}')
                     p.offset = OFFSET_END       
         consumer.assign(partitions)
 
@@ -270,7 +272,7 @@ class Broker:
         while self.__reply_partition_assigned.wait(1) is False:
             if time.time() > end_time:
                 raise TimeoutError("Function timed out")
-            logging.debug("waiting for reply topic to join")
+            logger.debug("waiting for reply topic to join")
             self.__consumer.poll(1)
 
     def reset_reply_topic_to_ts(self, timestamp):
@@ -296,7 +298,7 @@ class Broker:
                 else:
                     tp.offset = OFFSET_BEGINNING
         except KafkaException as e:
-            logging.error(e)
+            logger.error(e)
        
     def get_next_message(self, timeout = 0.01):
         message = self.__consumer.poll(timeout=timeout)
@@ -309,7 +311,7 @@ class Broker:
         # self.__consumer.commit(offsets=[tp], asynchronous=True)
         if message.error():
             if message.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
-                logging.info(f"Topic {message.topic()} not found, add it to checker")
+                logger.info(f"Topic {message.topic()} not found, add it to checker")
                 self.__topic_checker.add_topic(message.topic())
         return message
     
@@ -322,12 +324,12 @@ class Broker:
                 f'The topic name {self.__reply_topic} cannot be used'
                 )
         if new_topic not in self.__subribed_topics:
-            logging.debug(f'Start consuming from topic: {new_topic}')
+            logger.debug(f'Start consuming from topic: {new_topic}')
             self.__subribed_topics.append(new_topic)
             self.__consumer.subscribe(
                 self.__subribed_topics, on_assign=self.__on_assign)
         else:
-            logging.debug(f'Topic {new_topic} is already consuming')
+            logger.debug(f'Topic {new_topic} is already consuming')
 
     def remove_topic(self, topic_to_remove):
         if topic_to_remove == self.__reply_topic:
@@ -336,13 +338,13 @@ class Broker:
                 )
         self.__topic_checker.remove_topic(topic_to_remove)
         if topic_to_remove in self.__subribed_topics:
-            logging.debug(f'Topic {topic_to_remove} will be removed')
+            logger.debug(f'Topic {topic_to_remove} will be removed')
             self.__subribed_topics.remove(topic_to_remove)
             self.__consumer.subscribe(
                 self.__subribed_topics, on_assign=self.__on_assign
                 )
         else:
-            logging.debug(f'Topic {topic_to_remove} is not present')
+            logger.debug(f'Topic {topic_to_remove} is not present')
   
     def send_command(self, message: str):
         broker_cmd_in_topic = self.__config.get(self.__enviroment_set, 'k2eg_cmd_topic')

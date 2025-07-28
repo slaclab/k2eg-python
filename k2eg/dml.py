@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, List, Dict, Any
 
+logger = logging.getLogger(__name__) 
 _protocol_regex = r"^(pva?|ca)://((?:[A-Za-z0-9-_:]+(?:\.[A-Za-z0-9-_]+)*))$"
 
 def _filter_pv_uri(uri: str):
@@ -94,7 +95,7 @@ class dml:
         #contain a vector for each reply id where snapshot are stored
         self.reply_snapsthot_message = {}
         self.reply_recurring_snapsthot_message = {}
-        logging.info(
+        logger.info(
             f"Created dml instance for environment '{environment_id}' "+
             f"and application '{app_name}' with group '{group_name}' with poll timeout '{poll_timeout}'"
         )
@@ -137,7 +138,7 @@ class dml:
         converted_msg = None
         headers = msg.headers()
         if headers is None:
-            logging.error("Message without header received")
+            logger.error("Message without header received")
             return msg_id, converted_msg
         
         for key, value in headers:
@@ -159,7 +160,7 @@ class dml:
         return msg_id, converted_msg
 
     def process_event(self, topic_name, msg_id, decoded_message):
-        logging.debug(f"received event on topic {topic_name}")
+        logger.debug(f"received event on topic {topic_name}")
         self.__monitor_pv_handler[msg_id](msg_id, decoded_message)
     
     def __consumer_handler(self):
@@ -178,7 +179,7 @@ class dml:
                 if message.error():
                     if message.error().code() == KafkaError._PARTITION_EOF:
                         # End of partition event
-                        logging.error(
+                        logger.error(
                             f"{message.topic()} [{message.partition()}]reached "+
                             f"end at offset {message.offset()}"
                         )
@@ -195,7 +196,7 @@ class dml:
                         was_a_reply = msg_id in self.reply_message
                         if was_a_reply is True:
                             # print(f"message received from topic: {message.topic()} offset: {message.offset()}")
-                            logging.debug(f"received reply on topic {message.topic()}")
+                            logger.debug(f"received reply on topic {message.topic()}")
                             self.reply_message[msg_id] = decoded_message
                             self.reply_wait_condition.notify_all()
                         elif msg_id in self.__monitor_pv_handler:
@@ -211,7 +212,7 @@ class dml:
                             snapshot = self.reply_snapsthot_message[msg_id]
                             # check if the message is a snapshot completion error == 1
                             if decoded_message.get('error', 0) == 0:
-                                logging.debug(f"Added message to snapshot {msg_id}]") 
+                                logger.debug(f"Added message to snapshot {msg_id}]") 
                                 decoded_message.pop('error', None)
                                 decoded_message.pop('reply_id', None)
                                 decoded_message.pop('message-size', None)
@@ -222,7 +223,7 @@ class dml:
                                         snapshot.results[pv_name] = []
                                     snapshot.results[pv_name].append(value)
                             else:
-                                logging.debug(f"Snapshot {msg_id} compelted with error {decoded_message.get('error', 0)}")
+                                logger.debug(f"Snapshot {msg_id} compelted with error {decoded_message.get('error', 0)}")
                                 # we got the completion message so             
                                 # remove the snapshot from the list
                                 del self.reply_snapsthot_message[msg_id]
@@ -247,7 +248,7 @@ class dml:
                                 # Get the timestamp and iteration
                                 snapshot.timestamp = decoded_message.get('timestamp', None)
                                 snapshot.interation = decoded_message.get('iter_index', 0)
-                                logging.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] and iteration {snapshot.interation}")
+                                logger.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] and iteration {snapshot.interation}")
                                 
                             elif message_type == 1 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
                                 # Only process data messages that match the current iteration
@@ -265,9 +266,9 @@ class dml:
                                         if pv_name not in snapshot.results:
                                             snapshot.results[pv_name] = []
                                         snapshot.results[pv_name].append(value)
-                                    #logging.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {sum(len(v) for v in snapshot.results.values())} and iteration {snapshot.interation}")
+                                    #logger.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {sum(len(v) for v in snapshot.results.values())} and iteration {snapshot.interation}")
                                 else:
-                                    logging.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
+                                    logger.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
                                     
                             elif message_type == 2 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
                                 # Only process tail messages that match the current iteration
@@ -286,7 +287,7 @@ class dml:
                                         if pv_name in snapshot.results:
                                             handler_data[pv_name] = snapshot.results[pv_name]
                                     
-                                    logging.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] fromm {len(handler_data)} PVs with {sum(len(v) for v in snapshot.results.values())} messages on iteration {snapshot.interation}")
+                                    logger.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] fromm {len(handler_data)} PVs with {sum(len(v) for v in snapshot.results.values())} messages on iteration {snapshot.interation}")
                                     # Call handler asynchronously
                                     executor.submit(
                                         snapshot.handler,
@@ -295,9 +296,9 @@ class dml:
                                     )
                                     snapshot.clear()  # Clear results for the next iteration
                                 else:
-                                    logging.debug(f"Ignoring tail message from iteration {message_iteration}, current iteration is {snapshot.interation}")
+                                    logger.debug(f"Ignoring tail message from iteration {message_iteration}, current iteration is {snapshot.interation}")
                             else:
-                                logging.error(f"Error during snapshot {from_topic} with message type {message_type} and state {snapshot.state} and iteration {snapshot.interation} and timestamp {snapshot.timestamp}")
+                                logger.error(f"Error during snapshot {from_topic} with message type {message_type} and state {snapshot.state} and iteration {snapshot.interation} and timestamp {snapshot.timestamp}")
 
 
 
@@ -356,7 +357,7 @@ class dml:
         return 0, reply_msg
 
     def wait_for_backends(self):
-        logging.debug("Waiting for join kafka reply topic")
+        logger.debug("Waiting for join kafka reply topic")
         self.__broker.wait_for_reply_available()
 
     def get(self, pv_url: str, timeout: float = None):
@@ -413,7 +414,7 @@ class dml:
         # wait for consumer joined the topic
         fetched = False
         new_reply_id = str(uuid.uuid1())
-        logging.info("Send and wait for message")
+        logger.info("Send and wait for message")
         with self.reply_wait_condition:
             # init reply slot
             self.reply_message[new_reply_id] = None
@@ -458,7 +459,7 @@ class dml:
             # init reply slot
             self.reply_message[new_reply_id] = None
             if pv_name in self.__monitor_pv_handler:
-                logging.info(
+                logger.info(
                     f"Monitor already activate for pv {pv_name}")
                 return
             # send message to k2eg from activate (only for last topics) 
@@ -507,7 +508,7 @@ class dml:
                 protocol, pv_name = self.parse_pv_url(pv_uri)
                 self.reply_message[new_reply_id] = None
                 if pv_name in self.__monitor_pv_handler:
-                    logging.info(
+                    logger.info(
                         f"Monitor already activate for pv {pv_name}")
                     continue
                 filtered_list_pv_uri.append(pv_uri)
@@ -642,7 +643,7 @@ class dml:
                         s.publishing_topic = result["publishing_topic"]
                         self.reply_recurring_snapsthot_message[s.publishing_topic] = s
                         self.__broker.add_topic(s.publishing_topic)
-                        logging.info(
+                        logger.info(
                             f"Recurring snapshot {properties.snapshot_name} listening on topic {s.publishing_topic}"
                         )
                         

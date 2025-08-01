@@ -3,15 +3,28 @@ import datetime
 import json
 import os
 import logging
+import logging.handlers
 import re
 import threading
 import configparser
 import time
+import syslog
 from enum import Enum
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END, OFFSET_BEGINNING
 from confluent_kafka import KafkaError, KafkaException
 
+
 logger = logging.getLogger(__name__) 
+
+kafka_syslog_logger = logging.getLogger("k2eg-rdkafka")
+kafka_syslog_logger.setLevel(logging.DEBUG)
+# syslog_handler = logging.handlers.RotatingFileHandler("kafka.log", maxBytes=10*1024*1024, backupCount=2)
+syslog_handler = logging.handlers.SysLogHandler(address="/dev/log")
+formatter = logging.Formatter('%(name)s: %(levelname)s %(message)s')
+syslog_handler.setFormatter(formatter)
+kafka_syslog_logger.addHandler(syslog_handler)
+# Prevent propagation to root logger to avoid console output
+kafka_syslog_logger.propagate = False
 
 class SnapshotType(Enum):
     """
@@ -163,7 +176,8 @@ class Broker:
         enable_kafka_debug = os.getenv(
             'K2EG_PYTHON_ENABLE_KAFKA_DEBUG_LOG', 
             'false'
-        ).lower in ("yes", "true", "t", "1")
+        ).lower() in ("yes", "true", "t", "1")
+    
 
         self.__enviroment_set = enviroment_set
         # Create a new ConfigParser object
@@ -193,17 +207,26 @@ class Broker:
             'session.timeout.ms': 30000,       # Session timeout
             'heartbeat.interval.ms': 3000,     # Heartbeat interval
             'max.poll.interval.ms': 300000,    # Max poll interval
+            
+            # Ensure we capture rdkafka internal errors and warnings
+            'log_level': 4,                    # Capture WARNING and above (errors, critical, etc.)
         }
         if enable_kafka_debug is True:
             config_consumer['debug'] = 'consumer,fetch'
+            config_consumer['log_level'] = 7   # Capture all debug messages when debug enabled
 
-        self.__consumer = Consumer(config_consumer)
+        self.__consumer = Consumer(config_consumer, logger=kafka_syslog_logger)
         config_producer = {
             'bootstrap.servers': self.__config.get(
                 self.__enviroment_set, 'kafka_broker_url'
                 ),
+            # Ensure we capture rdkafka internal errors and warnings for producer too
+            'log_level': 4,                    # Capture WARNING and above
             #'debug': 'consumer,cgrp,topic,fetch',
         }
+        if enable_kafka_debug is True:
+            config_producer['log_level'] = 7   # Capture all debug messages when debug enabled
+            
         self.__producer = Producer(config_producer)
         self.__reply_topic = app_name + '-reply'
         self.__reply_partition_assigned = threading.Event()
@@ -271,7 +294,7 @@ class Broker:
         end_time = start_time + timeout
         while self.__reply_partition_assigned.wait(1) is False:
             if time.time() > end_time:
-                raise TimeoutError("Function timed out")
+                raise TimeoutError(f"Timeout waiting to join the reply topic {self.__reply_topic}")
             logger.debug("waiting for reply topic to join")
             self.__consumer.poll(1)
 

@@ -76,11 +76,14 @@ jobs:
         uses: gittools/actions/gitversion/execute@v0
         with:
           useConfigFile: true
-      - name: Manage Version
+      - name: Manage Version (PR dev tag)
         run: |
-          echo "Modify pyproject.toml with version number \"$GitVersion_Major.$GitVersion_Minor.$GitVersion_Patch\""
-          sed -i "s#^version = \"0.0.0\"#version = \"$GitVersion_Major.$GitVersion_Minor.$GitVersion_Patch\"#" pyproject.toml
-          cat pyproject.toml
+          PR_NUMBER='${{ github.event.pull_request.number }}'
+          # Create a PEP 440-compliant dev version that signals PR builds, e.g. 0.2.21.dev50{commits}
+          VERSION_DEV="$GitVersion_MajorMinorPatch.dev${PR_NUMBER}$GitVersion_CommitsSinceVersionSource"
+          echo "Setting PR dev version: $VERSION_DEV"
+          sed -i "s#^version = \"0.0.0\"#version = \"$VERSION_DEV\"#" pyproject.toml
+          grep '^version =' pyproject.toml
       - name: Install build deps
         run: |
           python -m pip install --upgrade pip

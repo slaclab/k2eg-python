@@ -8,7 +8,6 @@ import re
 import threading
 import configparser
 import time
-import syslog
 from enum import Enum
 from confluent_kafka import Consumer, TopicPartition, Producer, OFFSET_END, OFFSET_BEGINNING
 from confluent_kafka import KafkaError, KafkaException

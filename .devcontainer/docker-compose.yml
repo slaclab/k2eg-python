@@ -53,6 +53,7 @@ services:
 
   k2eg:
     image: ghcr.io/slaclab/k2eg/ubuntu:latest
+    platform: linux/amd64
     pull_policy: always
     entrypoint: k2eg
     depends_on: 

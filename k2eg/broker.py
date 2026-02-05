@@ -38,6 +38,8 @@ class SnapshotProperties:
     # The delay in milliseconds to push the snapshot data before the time window excpires
     # This permit to reduce latency when snapshot windows is to big with a lot of PVs data
     sub_push_delay_msec: int = 0
+    # Define if the snapshot need to respect the push order
+    respect_push_order: bool = True
     # Define if a snapshot need to be automatically or manually triggered
     triggered: bool = False
     # The type of the snapshot
@@ -423,6 +425,7 @@ class Broker:
             "repeat_delay_msec": properties.repeat_delay,
             "time_window_msec": properties.time_window,
             "sub_push_delay_msec": properties.sub_push_delay_msec,
+            "respect_push_order": properties.respect_push_order,
             "triggered": properties.triggered,
             "type": properties.type.value
         }

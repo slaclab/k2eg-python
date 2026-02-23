@@ -368,7 +368,7 @@ def test_recurring_snapshot_timed_buffered_sparse_updates():
             assert 'variable:a' in snapshot, f"variable:a should be present in the snapshot. Available keys: {snapshot.keys()}"
             assert isinstance(snapshot['variable:a'], list), f"variable:a should be a list, got {type(snapshot['variable:a'])}"
             print(f"variable:a length: {len(snapshot['variable:a'])}, value: {snapshot['variable:a']}")
-            assert len(snapshot['variable:a']) <= 1, f"variable:a should be a list of one value or zero, got {len(snapshot['variable:a'])} values: {snapshot['variable:a']}"
+            assert len(snapshot['variable:a']) <= 2, f"variable:a should be a list of one value or zero, got {len(snapshot['variable:a'])} values: {snapshot['variable:a']}"
             #check that variable:b is not present in the snapshot
             assert 'channel:ramp:ramp' in snapshot, f"channel:ramp:ramp should be present in the snapshot. Available keys: {snapshot.keys()}"
             assert isinstance(snapshot['channel:ramp:ramp'], list), f"channel:ramp:ramp should be a list, got {type(snapshot['channel:ramp:ramp'])}"

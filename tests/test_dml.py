@@ -361,14 +361,17 @@ def test_recurring_snapshot_timed_buffered_sparse_updates():
         # received_snapshot shuld be a dict with the snapshot data
         assert len(received_snapshot) > 0, "snapshot should not be None"
         #check that in every snapshot variable:a is present with a list of one value or zero
-        for snapshot in received_snapshot:
-            print(snapshot)
-            assert 'variable:a' in snapshot, "variable:a should be present in the snapshot"
-            assert isinstance(snapshot['variable:a'], list), "variable:a should be a list"
-            assert len(snapshot['variable:a']) <= 1, "variable:a should be a list of one value or zero"
+        for idx, snapshot in enumerate(received_snapshot):
+            print(f"\n=== Snapshot {idx} ===")
+            print(f"Keys: {snapshot.keys()}")
+            print(f"Full snapshot: {snapshot}")
+            assert 'variable:a' in snapshot, f"variable:a should be present in the snapshot. Available keys: {snapshot.keys()}"
+            assert isinstance(snapshot['variable:a'], list), f"variable:a should be a list, got {type(snapshot['variable:a'])}"
+            print(f"variable:a length: {len(snapshot['variable:a'])}, value: {snapshot['variable:a']}")
+            assert len(snapshot['variable:a']) <= 1, f"variable:a should be a list of one value or zero, got {len(snapshot['variable:a'])} values: {snapshot['variable:a']}"
             #check that variable:b is not present in the snapshot
-            assert 'channel:ramp:ramp' in snapshot, "channel:ramp:ramp should be present in the snapshot"
-            assert isinstance(snapshot['channel:ramp:ramp'], list), "channel:ramp:ramp should be a list"
+            assert 'channel:ramp:ramp' in snapshot, f"channel:ramp:ramp should be present in the snapshot. Available keys: {snapshot.keys()}"
+            assert isinstance(snapshot['channel:ramp:ramp'], list), f"channel:ramp:ramp should be a list, got {type(snapshot['channel:ramp:ramp'])}"
         # `
         
     except Exception as e:

@@ -326,7 +326,7 @@ def test_recurring_snapshot():
         k.snapshot_stop(snapshot_name)
         
         
-def test_recurring_snapshot_check_for_empty_pv():
+def test_recurring_snapshot_timed_buffered_sparse_updates():
     retry = 0
     snapshot_name = "snap_1"
     received_snapshot:list[Snapshot] = []

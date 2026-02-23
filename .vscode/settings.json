@@ -3,5 +3,6 @@
         "tests"
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "python.testing.pytestEnabled": true,
+    "kafka.clusters.selected": "kafka9092-a2Fma2E6OTA5Mg"
 }

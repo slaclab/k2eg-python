@@ -216,12 +216,12 @@ class dml:
                                 decoded_message.pop('error', None)
                                 decoded_message.pop('reply_id', None)
                                 decoded_message.pop('message-size', None)
-                                # the message contains a snapshot value
-                                if len(decoded_message) == 1:
-                                    pv_name, value = next(iter(decoded_message.items()))
-                                    if pv_name not in snapshot.results:
-                                        snapshot.results[pv_name] = []
-                                    snapshot.results[pv_name].append(value)
+                                decoded_message.pop('msg_seq', None)
+                                # Now the remaining key is the pv name
+                                pv_name, value = next(iter(decoded_message.items()))
+                                if pv_name not in snapshot.results:
+                                    snapshot.results[pv_name] = []
+                                snapshot.results[pv_name].append(value)
                             else:
                                 logger.debug(f"Snapshot {msg_id} compelted with error {decoded_message.get('error', 0)}")
                                 # we got the completion message so             
@@ -259,13 +259,16 @@ class dml:
                                     decoded_message.pop('iter_index', None)
                                     decoded_message.pop('message_type', None)
                                     decoded_message.pop('message-size', None)
+                                    decoded_message.pop('msg_seq', None)
                                     
                                     # Now the remaining key is the pv name
-                                    if len(decoded_message) == 1:
-                                        pv_name, value = next(iter(decoded_message.items()))
+                                    pv_name, value = next(iter(decoded_message.items()))
+                                    if pv_name in snapshot.pv_list:
                                         if pv_name not in snapshot.results:
                                             snapshot.results[pv_name] = []
                                         snapshot.results[pv_name].append(value)
+                                    else:
+                                        logger.warning(f"Received data for unexpected PV '{pv_name}' in snapshot {from_topic}")
                                     #logger.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {sum(len(v) for v in snapshot.results.values())} and iteration {snapshot.interation}")
                                 else:
                                     logger.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")

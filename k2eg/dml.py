@@ -163,146 +163,161 @@ class dml:
         logger.debug(f"received event on topic {topic_name}")
         self.__monitor_pv_handler[msg_id](msg_id, decoded_message)
     
+    @staticmethod
+    def _extract_remaining_dict_item(d: dict):
+        """Extract the first remaining key-value pair from a dict."""
+        return next(iter(d.items()))
+
+    def __handle_reply_message(self, msg_id: str, decoded_message: dict, from_topic: str):
+        """Handle reply messages."""
+        logger.debug(f"received reply on topic {from_topic}")
+        self.reply_message[msg_id] = decoded_message
+        self.reply_wait_condition.notify_all()
+
+    def __handle_monitor_event(self, executor, from_topic: str, msg_id: str, decoded_message: dict):
+        """Handle monitor events by submitting to thread pool."""
+        executor.submit(
+            self.process_event,
+            from_topic,
+            msg_id,
+            decoded_message[msg_id]
+        )
+
+    def __handle_snapshot_message(self, executor, from_topic: str, msg_id: str, decoded_message: dict):
+        """Handle snapshot messages (both regular and recurring)."""
+        # Metadata keys to remove
+        snapshot_metadata_keys = frozenset(('error', 'reply_id', 'message-size', 'msg_seq'))
+        recurring_data_metadata_keys = frozenset(('timestamp', 'iter_index', 'message_type', 'message-size', 'msg_seq'))
+
+        # Check if it's a regular snapshot
+        if msg_id in self.reply_snapsthot_message:
+            snapshot = self.reply_snapsthot_message[msg_id]
+            error = decoded_message.get('error', 0)
+            if error == 0:
+                logger.debug(f"Added message to snapshot {msg_id}]")
+                # Remove metadata from the message
+                for key in snapshot_metadata_keys:
+                    decoded_message.pop(key, None)
+                # Now the remaining key is the pv name
+                pv_name, value = self._extract_remaining_dict_item(decoded_message)
+                if pv_name not in snapshot.results:
+                    snapshot.results[pv_name] = []
+                snapshot.results[pv_name].append(value)
+            else:
+                logger.debug(f"Snapshot {msg_id} compelted with error {error}")
+                # we got the completion message so remove the snapshot from the list
+                del self.reply_snapsthot_message[msg_id]
+                # and call async handler in another thread
+                executor.submit(
+                    snapshot.handler,
+                    msg_id,
+                    snapshot.results
+                )
+        # Check if it's a recurring snapshot
+        elif from_topic in self.reply_recurring_snapsthot_message:
+            snapshot = self.reply_recurring_snapsthot_message[from_topic]
+            message_type = decoded_message.get('message_type')
+            if message_type is None:
+                return
+
+            message_iteration = decoded_message.get('iter_index', 0)
+
+            if message_type == 0:
+                # Header message
+                if snapshot.state in (SnapshotState.INITIALIZED, SnapshotState.TAIL_RECEIVED):
+                    snapshot.state = SnapshotState.HEADER_RECEVED
+                    snapshot.timestamp = decoded_message.get('timestamp')
+                    snapshot.interation = message_iteration
+                    logger.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] and iteration {snapshot.interation}")
+
+            elif message_type == 1:
+                # Data message
+                if snapshot.state in (SnapshotState.HEADER_RECEVED, SnapshotState.DATA_ACQUIRING):
+                    if message_iteration == snapshot.interation:
+                        snapshot.state = SnapshotState.DATA_ACQUIRING
+                        # Remove metadata from the message
+                        for key in recurring_data_metadata_keys:
+                            decoded_message.pop(key, None)
+
+                        # Now the remaining key is the pv name
+                        pv_name, value = self._extract_remaining_dict_item(decoded_message)
+                        if pv_name in snapshot.pv_list:
+                            if pv_name not in snapshot.results:
+                                snapshot.results[pv_name] = []
+                            snapshot.results[pv_name].append(value)
+                        else:
+                            logger.warning(f"Received data for unexpected PV '{pv_name}' in snapshot {from_topic}")
+                    else:
+                        logger.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
+
+            elif message_type == 2:
+                # Tail message
+                if snapshot.state in (SnapshotState.HEADER_RECEVED, SnapshotState.DATA_ACQUIRING):
+                    if message_iteration == snapshot.interation:
+                        snapshot.state = SnapshotState.TAIL_RECEIVED
+                        # Build handler data with metadata
+                        tail_ts = decoded_message.get('timestamp')
+                        handler_data = {
+                            "iteration": snapshot.interation,
+                            "header_timestamp": snapshot.timestamp,
+                            "tail_timestamp": tail_ts,
+                            "timestamp": tail_ts,
+                        }
+                        # Add PV data
+                        for pv_name in snapshot.pv_list:
+                            if pv_name in snapshot.results:
+                                handler_data[pv_name] = snapshot.results[pv_name]
+
+                        logger.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] fromm {len(handler_data)} PVs with {sum(len(v) for v in snapshot.results.values())} messages on iteration {snapshot.interation}")
+                        # Call handler asynchronously
+                        executor.submit(
+                            snapshot.handler,
+                            from_topic,
+                            handler_data
+                        )
+                        snapshot.clear()  # Clear results for the next iteration
+                    else:
+                        logger.debug(f"Ignoring tail message from iteration {message_iteration}, current iteration is {snapshot.interation}")
+            else:
+                logger.error(f"Error during snapshot {from_topic} with message type {message_type} and state {snapshot.state} and iteration {snapshot.interation} and timestamp {snapshot.timestamp}")
+
     def __consumer_handler(self):
         """ Consume message form kafka consumer
-        after the message has been consumed the header 'k2eg-ser-type' is checked 
+        after the message has been consumed the header 'k2eg-ser-type' is checked
         for find the serialization:
-            json, 
-            msgpack, 
+            json,
+            msgpack,
             msgpack-compact
         """
-        with  ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             while self.__consume_data:
                 message = self.__broker.get_next_message(self.poll_timeout)
-                if message is None: 
+                if message is None:
                     continue
-                if message.error():
-                    if message.error().code() == KafkaError._PARTITION_EOF:
+
+                err = message.error()
+                if err:
+                    if err.code() == KafkaError._PARTITION_EOF:
                         # End of partition event
                         logger.error(
                             f"{message.topic()} [{message.partition()}]reached "+
                             f"end at offset {message.offset()}"
                         )
-                    else:
-                        continue
-                else:
-                    was_a_reply = False
-                    from_topic = message.topic()
-                    #msg_id could be a reply id or pv name
-                    msg_id, decoded_message = self.__decode_message(message)
-                    if msg_id is None or decoded_message is None:
-                        continue
-                    with self.reply_wait_condition:
-                        was_a_reply = msg_id in self.reply_message
-                        if was_a_reply is True:
-                            # print(f"message received from topic: {message.topic()} offset: {message.offset()}")
-                            logger.debug(f"received reply on topic {message.topic()}")
-                            self.reply_message[msg_id] = decoded_message
-                            self.reply_wait_condition.notify_all()
-                        elif msg_id in self.__monitor_pv_handler:
-                                executor.submit(
-                                    self.process_event,
-                                    message.topic(),
-                                    msg_id,
-                                    decoded_message[msg_id]
-                                )
-                        elif msg_id in self.reply_snapsthot_message:
-                            # if the message is not a reply and not a monitor
-                            # it should be a snapshot
-                            snapshot = self.reply_snapsthot_message[msg_id]
-                            # check if the message is a snapshot completion error == 1
-                            if decoded_message.get('error', 0) == 0:
-                                logger.debug(f"Added message to snapshot {msg_id}]") 
-                                decoded_message.pop('error', None)
-                                decoded_message.pop('reply_id', None)
-                                decoded_message.pop('message-size', None)
-                                decoded_message.pop('msg_seq', None)
-                                # Now the remaining key is the pv name
-                                pv_name, value = next(iter(decoded_message.items()))
-                                if pv_name not in snapshot.results:
-                                    snapshot.results[pv_name] = []
-                                snapshot.results[pv_name].append(value)
-                            else:
-                                logger.debug(f"Snapshot {msg_id} compelted with error {decoded_message.get('error', 0)}")
-                                # we got the completion message so             
-                                # remove the snapshot from the list
-                                del self.reply_snapsthot_message[msg_id]
-                                # and call async handler in another thread
-                                executor.submit(
-                                    snapshot.handler,
-                                    msg_id,
-                                    snapshot.results
-                                )
-                        elif from_topic in self.reply_recurring_snapsthot_message:
-                             # it should be a recurring snapshot
-                            snapshot = self.reply_recurring_snapsthot_message[from_topic]
-                            message_type = decoded_message.get('message_type', None)
-                            if message_type is None:
-                                continue
-                            
-                            # Get the current iteration from the message
-                            message_iteration = decoded_message.get('iter_index', 0)
-                            
-                            if message_type == 0 and (snapshot.state == SnapshotState.INITIALIZED or snapshot.state == SnapshotState.TAIL_RECEIVED):
-                                snapshot.state = SnapshotState.HEADER_RECEVED
-                                # Get the timestamp and iteration
-                                snapshot.timestamp = decoded_message.get('timestamp', None)
-                                snapshot.interation = decoded_message.get('iter_index', 0)
-                                logger.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] and iteration {snapshot.interation}")
-                                
-                            elif message_type == 1 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
-                                # Only process data messages that match the current iteration
-                                if message_iteration == snapshot.interation:
-                                    snapshot.state = SnapshotState.DATA_ACQUIRING
-                                    # Remove metadata from the message
-                                    decoded_message.pop('timestamp', None)
-                                    decoded_message.pop('iter_index', None)
-                                    decoded_message.pop('message_type', None)
-                                    decoded_message.pop('message-size', None)
-                                    decoded_message.pop('msg_seq', None)
-                                    
-                                    # Now the remaining key is the pv name
-                                    pv_name, value = next(iter(decoded_message.items()))
-                                    if pv_name in snapshot.pv_list:
-                                        if pv_name not in snapshot.results:
-                                            snapshot.results[pv_name] = []
-                                        snapshot.results[pv_name].append(value)
-                                    else:
-                                        logger.warning(f"Received data for unexpected PV '{pv_name}' in snapshot {from_topic}")
-                                    #logger.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {sum(len(v) for v in snapshot.results.values())} and iteration {snapshot.interation}")
-                                else:
-                                    logger.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
-                                    
-                            elif message_type == 2 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
-                                # Only process tail messages that match the current iteration
-                                if message_iteration == snapshot.interation:
-                                    snapshot.state = SnapshotState.TAIL_RECEIVED
-                                    # Build handler data with metadata
-                                    tail_ts = decoded_message.get('timestamp', None)
-                                    handler_data = {
-                                        "iteration": snapshot.interation,
-                                        "header_timestamp": snapshot.timestamp,
-                                        "tail_timestamp": tail_ts,
-                                        "timestamp": tail_ts,
-                                    }
-                                    # Add PV data
-                                    for pv_name in snapshot.pv_list:
-                                        if pv_name in snapshot.results:
-                                            handler_data[pv_name] = snapshot.results[pv_name]
-                                    
-                                    logger.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] fromm {len(handler_data)} PVs with {sum(len(v) for v in snapshot.results.values())} messages on iteration {snapshot.interation}")
-                                    # Call handler asynchronously
-                                    executor.submit(
-                                        snapshot.handler,
-                                        from_topic,
-                                        handler_data
-                                    )
-                                    snapshot.clear()  # Clear results for the next iteration
-                                else:
-                                    logger.debug(f"Ignoring tail message from iteration {message_iteration}, current iteration is {snapshot.interation}")
-                            else:
-                                logger.error(f"Error during snapshot {from_topic} with message type {message_type} and state {snapshot.state} and iteration {snapshot.interation} and timestamp {snapshot.timestamp}")
+                    continue
 
+                from_topic = message.topic()
+                #msg_id could be a reply id or pv name
+                msg_id, decoded_message = self.__decode_message(message)
+                if msg_id is None or decoded_message is None:
+                    continue
+
+                with self.reply_wait_condition:
+                    if msg_id in self.reply_message:
+                        self.__handle_reply_message(msg_id, decoded_message, from_topic)
+                    elif msg_id in self.__monitor_pv_handler:
+                        self.__handle_monitor_event(executor, from_topic, msg_id, decoded_message)
+                    elif msg_id in self.reply_snapsthot_message or from_topic in self.reply_recurring_snapsthot_message:
+                        self.__handle_snapshot_message(executor, from_topic, msg_id, decoded_message)
 
 
     def parse_pv_url(self, pv_url):

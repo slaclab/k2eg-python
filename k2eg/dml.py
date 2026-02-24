@@ -49,11 +49,12 @@ class Snapshot:
     handler: Callable[[str, Dict[str, Any]], None]
     properties: SnapshotProperties = None
     publishing_topic: str = None
-    state: SnapshotState = SnapshotState.INITIALIZED 
+    state: SnapshotState = SnapshotState.INITIALIZED
     timestamp: datetime.datetime = None
     interation: int = 0
     pv_list: List[str] = field(default_factory=list)
     results: Dict[str, List[Any]] = field(default_factory=dict[str, List[Any]])
+    pending_messages: List[tuple] = field(default_factory=list)
     def init(self):
         # fill the results with empty lists for each pv
         for pv in self.pv_list:
@@ -63,6 +64,7 @@ class Snapshot:
         """Clear all lists in the results dictionary without removing the keys."""
         for key in self.results:
             self.results[key] = []
+        self.pending_messages = []
             
 class dml:
     """K2EG client"""
@@ -188,6 +190,10 @@ class dml:
             return
 
         snapshot.state = SnapshotState.DATA_ACQUIRING
+
+        # Read msg_seq before stripping metadata
+        msg_seq = decoded_message.get('msg_seq', 0)
+
         # Remove metadata from the message
         for key in recurring_data_metadata_keys:
             decoded_message.pop(key, None)
@@ -195,9 +201,8 @@ class dml:
         # Now the remaining key is the pv name
         pv_name, value = self._extract_remaining_dict_item(decoded_message)
         if pv_name in snapshot.pv_list:
-            if pv_name not in snapshot.results:
-                snapshot.results[pv_name] = []
-            snapshot.results[pv_name].append(value)
+            # Buffer message for ordering instead of appending immediately
+            snapshot.pending_messages.append((msg_seq, pv_name, value))
         else:
             logger.warning(f"Received data for unexpected PV '{pv_name}' in snapshot {from_topic}")
 
@@ -211,6 +216,14 @@ class dml:
             return
 
         snapshot.state = SnapshotState.TAIL_RECEIVED
+
+        # Sort buffered data messages by msg_seq and flush to results
+        snapshot.pending_messages.sort(key=lambda t: t[0])
+        for _, pv_name, value in snapshot.pending_messages:
+            if pv_name not in snapshot.results:
+                snapshot.results[pv_name] = []
+            snapshot.results[pv_name].append(value)
+
         # Build handler data with metadata
         tail_ts = decoded_message.get('timestamp')
         handler_data = {

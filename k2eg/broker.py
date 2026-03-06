@@ -364,6 +364,12 @@ class Broker:
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id
         }
+        logger.info(
+            "Send command=get pv=%s reply_topic=%s reply_id=%s",
+            pv_uri,
+            self.__reply_topic,
+            reply_id,
+        )
         self.send_command(json.dumps(json_msg))
 
     def send_start_monitor_command(self, pv_uri, pv_reply_topic, reply_id):
@@ -377,6 +383,13 @@ class Broker:
             "reply_id": reply_id,
             "monitor_dest_topic": pv_reply_topic
         }
+        logger.info(
+            "Send command=monitor pv=%s monitor_dest_topic=%s reply_topic=%s reply_id=%s",
+            pv_uri,
+            pv_reply_topic,
+            self.__reply_topic,
+            reply_id,
+        )
         self.send_command(json.dumps(json_msg))    
     
     def send_start_monitor_command_many(self, pv_uri_list, reply_id):
@@ -389,6 +402,12 @@ class Broker:
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id
         }
+        logger.info(
+            "Send command=multi-monitor pv_count=%s reply_topic=%s reply_id=%s",
+            len(pv_uri_list),
+            self.__reply_topic,
+            reply_id,
+        )
         self.send_command(json.dumps(json_msg))  
 
     def send_put_command(self, pv_uri: str, value: any, reply_id: str):
@@ -400,6 +419,12 @@ class Broker:
             "reply_id": reply_id,
             "serialization": "msgpack"
         }
+        logger.info(
+            "Send command=put pv=%s reply_topic=%s reply_id=%s",
+            pv_uri,
+            self.__reply_topic,
+            reply_id,
+        )
         self.send_command(json.dumps(json_msg))   
 
     def send_snapshot_command(self, pv_uri_list:list[str], reply_id:str):
@@ -410,6 +435,12 @@ class Broker:
             "reply_topic": self.__reply_topic,
             "reply_id": reply_id
         }
+        logger.info(
+            "Send command=snapshot pv_count=%s reply_topic=%s reply_id=%s",
+            len(pv_uri_list),
+            self.__reply_topic,
+            reply_id,
+        )
         self.send_command(json.dumps(json_msg))  
 
     def send_repeating_snapshot_command(self, properties:SnapshotProperties, reply_id:str):
@@ -432,6 +463,13 @@ class Broker:
         # add pv_field_filter_list if not none and is not empty
         if properties.pv_field_filter_list is not None and len(properties.pv_field_filter_list) > 0:
             json_msg['pv_field_filter_list'] = properties.pv_field_filter_list
+        logger.info(
+            "Send command=repeating_snapshot snapshot_name=%s pv_count=%s reply_topic=%s reply_id=%s",
+            properties.snapshot_name,
+            len(properties.pv_uri_list),
+            self.__reply_topic,
+            reply_id,
+        )
         self.send_command(json.dumps(json_msg))  
     
     def send_repeating_snapshot_trigger_command(self, snapshot_name:str, reply_id:str):
@@ -443,6 +481,12 @@ class Broker:
             "reply_id": reply_id,
             "snapshot_name": snapshot_name,
         }
+        logger.info(
+            "Send command=repeating_snapshot_trigger snapshot_name=%s reply_topic=%s reply_id=%s",
+            snapshot_name,
+            self.__reply_topic,
+            reply_id,
+        )
         self.send_command(json.dumps(json_msg)) 
     
     def send_repeating_snapshot_stop_command(self, snapshot_name:str, reply_id:str):
@@ -454,6 +498,12 @@ class Broker:
             "reply_id": reply_id,
             "snapshot_name": snapshot_name,
         }
+        logger.info(
+            "Send command=repeating_snapshot_stop snapshot_name=%s reply_topic=%s reply_id=%s",
+            snapshot_name,
+            self.__reply_topic,
+            reply_id,
+        )
         self.send_command(json.dumps(json_msg)) 
 
     def initialized(self):

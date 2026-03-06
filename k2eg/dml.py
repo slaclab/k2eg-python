@@ -94,6 +94,9 @@ class dml:
         self.reply_wait_condition = threading.Condition()
         self.reply_ready_event = threading.Event()
         self.reply_message = {}
+        # Track reply IDs that timed out so we can detect late Kafka replies.
+        self.__timed_out_replies = {}
+        self.__timed_out_replies_ttl_sec = 300
         #contain a vector for each reply id where snapshot are stored
         self.reply_snapsthot_message = {}
         self.reply_recurring_snapsthot_message = {}
@@ -159,6 +162,11 @@ class dml:
                         msg.value()
                         )
                 break   
+        if msg_id is None:
+            logger.debug(
+                "Unable to decode incoming message: missing/unsupported 'k2eg-ser-type' header. headers=%s",
+                headers,
+            )
         return msg_id, converted_msg
 
     def process_event(self, topic_name, msg_id, decoded_message):
@@ -319,6 +327,16 @@ class dml:
         else:
             logger.error(f"Error during snapshot {from_topic} with message type {message_type} and state {snapshot.state} and iteration {snapshot.interation} and timestamp {snapshot.timestamp}")
 
+    def __prune_timed_out_replies(self):
+        """Remove old timed-out reply IDs to avoid unbounded growth."""
+        now_ts = datetime.datetime.now().timestamp()
+        expired = [
+            rid for rid, timeout_ts in self.__timed_out_replies.items()
+            if (now_ts - timeout_ts) > self.__timed_out_replies_ttl_sec
+        ]
+        for rid in expired:
+            self.__timed_out_replies.pop(rid, None)
+
     def __consumer_handler(self):
         """ Consume message form kafka consumer
         after the message has been consumed the header 'k2eg-ser-type' is checked
@@ -356,6 +374,34 @@ class dml:
                         self.__handle_monitor_event(executor, from_topic, msg_id, decoded_message)
                     elif msg_id in self.reply_snapsthot_message or from_topic in self.reply_recurring_snapsthot_message:
                         self.__handle_snapshot_message(executor, from_topic, msg_id, decoded_message)
+                    else:
+                        reply_id = decoded_message.get('reply_id') if isinstance(decoded_message, dict) else None
+                        msg_keys = list(decoded_message.keys()) if isinstance(decoded_message, dict) else []
+                        if reply_id is not None:
+                            timeout_ts = self.__timed_out_replies.pop(reply_id, None)
+                            if timeout_ts is not None:
+                                late_by_sec = datetime.datetime.now().timestamp() - timeout_ts
+                                logger.warning(
+                                    "Dropped late reply from Kafka: topic=%s reply_id=%s arrived %.3fs after client timeout. keys=%s",
+                                    from_topic,
+                                    reply_id,
+                                    late_by_sec,
+                                    msg_keys,
+                                )
+                            else:
+                                logger.warning(
+                                    "Dropped unmatched reply from Kafka: topic=%s reply_id=%s keys=%s",
+                                    from_topic,
+                                    reply_id,
+                                    msg_keys,
+                                )
+                        else:
+                            logger.debug(
+                                "Dropped unhandled Kafka message: topic=%s msg_id=%s keys=%s",
+                                from_topic,
+                                msg_id,
+                                msg_keys,
+                            )
 
 
     def parse_pv_url(self, pv_url):
@@ -401,6 +447,14 @@ class dml:
         )
         if not got_it:
             # The timeout has expired and no message was received
+            self.__timed_out_replies[new_reply_id] = datetime.datetime.now().timestamp()
+            self.__prune_timed_out_replies()
+            logger.warning(
+                "Timeout waiting for reply_id=%s (timeout=%s). pending_reply_slots=%s",
+                new_reply_id,
+                timeout,
+                len(self.reply_message),
+            )
             return -2, None
         reply_msg = self.reply_message.pop(new_reply_id, None)
         if reply_msg is None:
@@ -485,7 +539,7 @@ class dml:
                 if op_res == -2:
                     # raise timeout exception
                     raise OperationTimeout(
-                            f"Timeout during start get operation for {pv_name}"
+                            f"Timeout during put operation for {pv_name}"
                             )
                 elif op_res == -1:
                     continue

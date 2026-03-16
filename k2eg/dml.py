@@ -13,7 +13,7 @@ from k2eg.broker import Broker, SnapshotProperties
 from k2eg.serialization import MessagePackSerializable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Callable, List, Dict, Any
+from typing import Callable, List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__) 
 _protocol_regex = r"^(pva?|ca)://((?:[A-Za-z0-9-_:]+(?:\.[A-Za-z0-9-_]+)*))$"
@@ -45,6 +45,24 @@ class SnapshotState(Enum):
     TAIL_RECEIVED = 3
 
 @dataclass
+class RecurringIteration:
+    """Track sequencing state for one recurring snapshot iteration."""
+    iteration: int
+    header_timestamp: Optional[int] = None
+    tail_timestamp: Optional[int] = None
+    tail_seq: Optional[int] = None
+    total_messages: Optional[int] = None
+    next_expected_seq: int = 2
+    results: Dict[str, List[Any]] = field(default_factory=dict)
+    deferred_messages: Dict[int, tuple[str, Any]] = field(default_factory=dict)
+
+    def is_complete(self) -> bool:
+        """True when we have enough ordered data to publish the iteration."""
+        if self.tail_seq is None:
+            return False
+        return self.next_expected_seq > self.tail_seq - 1
+
+@dataclass
 class Snapshot:
     handler: Callable[[str, Dict[str, Any]], None]
     properties: SnapshotProperties = None
@@ -54,17 +72,31 @@ class Snapshot:
     interation: int = 0
     pv_list: List[str] = field(default_factory=list)
     results: Dict[str, List[Any]] = field(default_factory=dict[str, List[Any]])
-    pending_messages: List[tuple] = field(default_factory=list)
+    active_iteration: Optional[RecurringIteration] = None
+    next_iteration: Optional[RecurringIteration] = None
+
     def init(self):
         # fill the results with empty lists for each pv
         for pv in self.pv_list:
             self.results[pv] = []
-            
+
+    def create_iteration(self, iteration: int, header_timestamp: Optional[int] = None) -> RecurringIteration:
+        new_iteration = RecurringIteration(
+            iteration=iteration,
+            header_timestamp=header_timestamp,
+            results={pv: [] for pv in self.pv_list},
+        )
+        return new_iteration
+
     def clear(self):
         """Clear all lists in the results dictionary without removing the keys."""
         for key in self.results:
             self.results[key] = []
-        self.pending_messages = []
+        self.timestamp = None
+        self.interation = 0
+        self.state = SnapshotState.INITIALIZED
+        self.active_iteration = None
+        self.next_iteration = None
             
 class dml:
     """K2EG client"""
@@ -178,26 +210,134 @@ class dml:
         """Extract the first remaining key-value pair from a dict."""
         return next(iter(d.items()))
 
+    def __set_active_iteration(self, snapshot: Snapshot, iteration_state: RecurringIteration):
+        # Mirror the active iteration into the legacy snapshot fields so the public
+        # handler payload and existing logging keep the same shape.
+        snapshot.active_iteration = iteration_state
+        snapshot.interation = iteration_state.iteration
+        snapshot.timestamp = iteration_state.header_timestamp
+        snapshot.results = iteration_state.results
+        snapshot.state = SnapshotState.HEADER_RECEVED
+
+    def __promote_next_iteration(self, snapshot: Snapshot):
+        if snapshot.next_iteration is None:
+            snapshot.clear()
+            return
+
+        # The next iteration may already have buffered data because Kafka delivery
+        # can overlap consecutive iterations. Promote it immediately and drain any
+        # contiguous seq numbers we already have.
+        next_iteration = snapshot.next_iteration
+        snapshot.next_iteration = None
+        self.__set_active_iteration(snapshot, next_iteration)
+        if next_iteration.deferred_messages:
+            self.__flush_iteration_messages(snapshot, next_iteration)
+        self.__update_snapshot_state(snapshot)
+
+    def __update_snapshot_state(self, snapshot: Snapshot):
+        iteration_state = snapshot.active_iteration
+        if iteration_state is None:
+            snapshot.state = SnapshotState.INITIALIZED
+            return
+        if iteration_state.tail_seq is not None:
+            snapshot.state = SnapshotState.TAIL_RECEIVED
+        elif iteration_state.next_expected_seq > 2:
+            snapshot.state = SnapshotState.DATA_ACQUIRING
+        else:
+            snapshot.state = SnapshotState.HEADER_RECEVED
+
+    def __flush_iteration_messages(self, snapshot: Snapshot, iteration_state: RecurringIteration):
+        # Messages are appended only when their msg_seq becomes the next expected
+        # one. Higher seq numbers stay buffered until the missing gap arrives.
+        while iteration_state.next_expected_seq in iteration_state.deferred_messages:
+            pv_name, value = iteration_state.deferred_messages.pop(iteration_state.next_expected_seq)
+            iteration_state.results[pv_name].append(value)
+            iteration_state.next_expected_seq += 1
+
+        snapshot.results = iteration_state.results
+        snapshot.interation = iteration_state.iteration
+        snapshot.timestamp = iteration_state.header_timestamp
+
+    def __finalize_recurring_iteration(self, executor, snapshot: Snapshot, from_topic: str):
+        iteration_state = snapshot.active_iteration
+        if iteration_state is None or not iteration_state.is_complete():
+            return
+
+        # total_messages is used only as a validation aid here. Ordering is driven
+        # entirely by msg_seq and the contiguous flush above.
+        if iteration_state.total_messages is not None and iteration_state.tail_seq != iteration_state.total_messages:
+            logger.warning(
+                "Recurring snapshot %s iteration %s tail msg_seq=%s differs from total_messages=%s",
+                from_topic,
+                iteration_state.iteration,
+                iteration_state.tail_seq,
+                iteration_state.total_messages,
+            )
+
+        if iteration_state.total_messages is not None:
+            expected_data_messages = max(iteration_state.total_messages - 2, 0)
+            received_data_messages = sum(len(values) for values in iteration_state.results.values()) + len(iteration_state.deferred_messages)
+            if received_data_messages < expected_data_messages:
+                logger.warning(
+                    "Recurring snapshot %s iteration %s incomplete: received %s/%s data messages",
+                    from_topic,
+                    iteration_state.iteration,
+                    received_data_messages,
+                    expected_data_messages,
+                )
+
+        handler_data = {
+            "iteration": iteration_state.iteration,
+            "header_timestamp": iteration_state.header_timestamp,
+            "tail_timestamp": iteration_state.tail_timestamp,
+            "timestamp": iteration_state.tail_timestamp,
+        }
+        for pv_name in snapshot.pv_list:
+            handler_data[pv_name] = iteration_state.results.get(pv_name, [])
+
+        logger.debug(
+            f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] "
+            f"fromm {len(handler_data)} PVs with {sum(len(v) for v in iteration_state.results.values())} "
+            f"messages on iteration {iteration_state.iteration}"
+        )
+        executor.submit(snapshot.handler, from_topic, handler_data)
+        self.__promote_next_iteration(snapshot)
+
     def __handle_recurring_snapshot_header(self, snapshot, from_topic: str, decoded_message: dict, message_iteration: int):
         """Handle recurring snapshot header message (type 0)."""
-        if snapshot.state in (SnapshotState.INITIALIZED, SnapshotState.TAIL_RECEIVED):
-            snapshot.state = SnapshotState.HEADER_RECEVED
-            snapshot.timestamp = decoded_message.get('timestamp')
-            snapshot.interation = message_iteration
+        header_timestamp = decoded_message.get('timestamp')
+        active_iteration = snapshot.active_iteration
+
+        if active_iteration is None:
+            self.__set_active_iteration(snapshot, snapshot.create_iteration(message_iteration, header_timestamp))
             logger.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] and iteration {snapshot.interation}")
+            return
+
+        if message_iteration == active_iteration.iteration:
+            if active_iteration.header_timestamp is None:
+                active_iteration.header_timestamp = header_timestamp
+                snapshot.timestamp = header_timestamp
+            return
+
+        if message_iteration == active_iteration.iteration + 1:
+            if snapshot.next_iteration is None or snapshot.next_iteration.iteration != message_iteration:
+                snapshot.next_iteration = snapshot.create_iteration(message_iteration, header_timestamp)
+            elif snapshot.next_iteration.header_timestamp is None:
+                snapshot.next_iteration.header_timestamp = header_timestamp
+            logger.debug("Cached recurring snapshot %s header for next iteration %s", from_topic, message_iteration)
+            return
+
+        logger.debug(
+            "Ignoring recurring snapshot %s header for iteration %s while active=%s next=%s",
+            from_topic,
+            message_iteration,
+            active_iteration.iteration,
+            snapshot.next_iteration.iteration if snapshot.next_iteration else None,
+        )
 
     def __handle_recurring_snapshot_data(self, executor, snapshot, from_topic: str, decoded_message: dict, message_iteration: int):
         """Handle recurring snapshot data message (type 1)."""
         recurring_data_metadata_keys = frozenset(('timestamp', 'iter_index', 'message_type', 'message-size', 'msg_seq'))
-
-        if snapshot.state not in (SnapshotState.HEADER_RECEVED, SnapshotState.DATA_ACQUIRING):
-            return
-
-        if message_iteration != snapshot.interation:
-            logger.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
-            return
-
-        snapshot.state = SnapshotState.DATA_ACQUIRING
 
         # Read msg_seq before stripping metadata
         msg_seq = decoded_message.get('msg_seq', 0)
@@ -208,51 +348,72 @@ class dml:
 
         # Now the remaining key is the pv name
         pv_name, value = self._extract_remaining_dict_item(decoded_message)
-        if pv_name in snapshot.pv_list:
-            # Buffer message for ordering instead of appending immediately
-            snapshot.pending_messages.append((msg_seq, pv_name, value))
-        else:
+        if pv_name not in snapshot.pv_list:
             logger.warning(f"Received data for unexpected PV '{pv_name}' in snapshot {from_topic}")
+            return
+
+        active_iteration = snapshot.active_iteration
+        if active_iteration is None:
+            logger.debug("Ignoring recurring snapshot %s data for iteration %s before header", from_topic, message_iteration)
+            return
+
+        if message_iteration == active_iteration.iteration:
+            target_iteration = active_iteration
+        elif message_iteration == active_iteration.iteration + 1:
+            # Cache one future iteration so we can keep consuming overlap without
+            # blocking the current iteration finalization path.
+            if snapshot.next_iteration is None or snapshot.next_iteration.iteration != message_iteration:
+                snapshot.next_iteration = snapshot.create_iteration(message_iteration)
+            target_iteration = snapshot.next_iteration
+        else:
+            logger.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
+            return
+
+        if msg_seq < target_iteration.next_expected_seq:
+            logger.debug(
+                "Ignoring duplicate/stale data message for snapshot %s iteration %s seq %s",
+                from_topic,
+                message_iteration,
+                msg_seq,
+            )
+            return
+
+        target_iteration.deferred_messages[msg_seq] = (pv_name, value)
+
+        if target_iteration is active_iteration:
+            # Try to advance the active iteration immediately after every message
+            # instead of sorting the whole buffer when the tail arrives.
+            self.__flush_iteration_messages(snapshot, target_iteration)
+            self.__update_snapshot_state(snapshot)
+            self.__finalize_recurring_iteration(executor, snapshot, from_topic)
 
     def __handle_recurring_snapshot_tail(self, executor, snapshot, from_topic: str, decoded_message: dict, message_iteration: int):
         """Handle recurring snapshot tail message (type 2)."""
-        if snapshot.state not in (SnapshotState.HEADER_RECEVED, SnapshotState.DATA_ACQUIRING):
+        active_iteration = snapshot.active_iteration
+        if active_iteration is None:
+            logger.debug("Ignoring recurring snapshot %s tail for iteration %s before header", from_topic, message_iteration)
             return
 
-        if message_iteration != snapshot.interation:
+        if message_iteration == active_iteration.iteration:
+            target_iteration = active_iteration
+        elif message_iteration == active_iteration.iteration + 1:
+            if snapshot.next_iteration is None or snapshot.next_iteration.iteration != message_iteration:
+                snapshot.next_iteration = snapshot.create_iteration(message_iteration)
+            target_iteration = snapshot.next_iteration
+        else:
             logger.debug(f"Ignoring tail message from iteration {message_iteration}, current iteration is {snapshot.interation}")
             return
 
-        snapshot.state = SnapshotState.TAIL_RECEIVED
+        target_iteration.tail_timestamp = decoded_message.get('timestamp')
+        target_iteration.tail_seq = decoded_message.get('msg_seq')
+        target_iteration.total_messages = decoded_message.get('total_messages')
 
-        # Sort buffered data messages by msg_seq and flush to results
-        snapshot.pending_messages.sort(key=lambda t: t[0])
-        for _, pv_name, value in snapshot.pending_messages:
-            if pv_name not in snapshot.results:
-                snapshot.results[pv_name] = []
-            snapshot.results[pv_name].append(value)
-
-        # Build handler data with metadata
-        tail_ts = decoded_message.get('timestamp')
-        handler_data = {
-            "iteration": snapshot.interation,
-            "header_timestamp": snapshot.timestamp,
-            "tail_timestamp": tail_ts,
-            "timestamp": tail_ts,
-        }
-        # Add PV data
-        for pv_name in snapshot.pv_list:
-            if pv_name in snapshot.results:
-                handler_data[pv_name] = snapshot.results[pv_name]
-
-        logger.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] fromm {len(handler_data)} PVs with {sum(len(v) for v in snapshot.results.values())} messages on iteration {snapshot.interation}")
-        # Call handler asynchronously
-        executor.submit(
-            snapshot.handler,
-            from_topic,
-            handler_data
-        )
-        snapshot.clear()  # Clear results for the next iteration
+        if target_iteration is active_iteration:
+            # Tail can arrive before some lower seq data. Finalization waits until
+            # the missing messages have been flushed in order.
+            self.__flush_iteration_messages(snapshot, target_iteration)
+            self.__update_snapshot_state(snapshot)
+            self.__finalize_recurring_iteration(executor, snapshot, from_topic)
 
     def __handle_reply_message(self, msg_id: str, decoded_message: dict, from_topic: str):
         """Handle reply messages."""

@@ -35,7 +35,7 @@ services:
       - ./tests/epics-test.db:/db/softioc.db
 
   k2eg:
-    image: ghcr.io/slaclab/k2eg/ubuntu:v0.3.65
+    image: ghcr.io/slaclab/k2eg/ubuntu:pr-162
     pull_policy: always
     command: 
         - /bin/bash

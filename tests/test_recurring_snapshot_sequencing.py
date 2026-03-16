@@ -1,7 +1,10 @@
 import importlib.util
 import sys
+import time
 import types
 from pathlib import Path
+
+import pytest
 
 
 class _DummyRWLockFairD:
@@ -70,6 +73,42 @@ def make_client():
     client._dml__broker = None
     client._dml__consume_data = False
     return client
+
+
+def run_iteration_sequence(client, executor, snapshot, topic, iteration, events):
+    client._dml__handle_recurring_snapshot_header(
+        snapshot,
+        topic,
+        {"timestamp": iteration * 1000, "msg_seq": 1},
+        iteration,
+    )
+    for msg_seq, pv_name, value in events:
+        client._dml__handle_recurring_snapshot_data(
+            executor,
+            snapshot,
+            topic,
+            {
+                "timestamp": iteration * 1000 + msg_seq,
+                "iter_index": iteration,
+                "message_type": 1,
+                "msg_seq": msg_seq,
+                pv_name: value,
+            },
+            iteration,
+        )
+    client._dml__handle_recurring_snapshot_tail(
+        executor,
+        snapshot,
+        topic,
+        {
+            "timestamp": iteration * 1000 + len(events) + 1,
+            "iter_index": iteration,
+            "message_type": 2,
+            "msg_seq": len(events) + 2,
+            "total_messages": len(events) + 2,
+        },
+        iteration,
+    )
 
 
 def test_recurring_snapshot_reorders_within_iteration_using_msg_seq():
@@ -181,3 +220,151 @@ def test_recurring_snapshot_caches_next_iteration_until_current_finishes():
     assert delivered[1][1]["pv:b"] == ["iter11"]
     assert snapshot.active_iteration is None
     assert snapshot.state == dml_module.SnapshotState.INITIALIZED
+
+
+@pytest.mark.parametrize(
+    ("scenario_name", "runner"),
+    [
+        (
+            "in_order",
+            lambda client, executor, snapshot, delivered: run_iteration_sequence(
+                client,
+                executor,
+                snapshot,
+                "perf-topic",
+                1,
+                [(seq, "pv:a", f"value-{seq - 1}") for seq in range(2, 502)],
+            ),
+        ),
+        (
+            "intra_iteration_reorder",
+            lambda client, executor, snapshot, delivered: run_iteration_sequence(
+                client,
+                executor,
+                snapshot,
+                "perf-topic",
+                1,
+                [(seq, "pv:a", f"value-{seq}") for seq in range(251, 502)]
+                + [(seq, "pv:a", f"value-{seq}") for seq in range(2, 251)],
+            ),
+        ),
+        (
+            "iteration_overlap",
+            lambda client, executor, snapshot, delivered: (
+                client._dml__handle_recurring_snapshot_header(
+                    snapshot,
+                    "perf-topic",
+                    {"timestamp": 1000, "msg_seq": 1},
+                    1,
+                ),
+                [
+                    client._dml__handle_recurring_snapshot_data(
+                        executor,
+                        snapshot,
+                        "perf-topic",
+                        {
+                            "timestamp": 1000 + seq,
+                            "iter_index": 1,
+                            "message_type": 1,
+                            "msg_seq": seq,
+                            "pv:a": f"iter1-{seq}",
+                        },
+                        1,
+                    )
+                    for seq in range(2, 252)
+                ],
+                client._dml__handle_recurring_snapshot_header(
+                    snapshot,
+                    "perf-topic",
+                    {"timestamp": 2000, "msg_seq": 1},
+                    2,
+                ),
+                [
+                    client._dml__handle_recurring_snapshot_data(
+                        executor,
+                        snapshot,
+                        "perf-topic",
+                        {
+                            "timestamp": 2000 + seq,
+                            "iter_index": 2,
+                            "message_type": 1,
+                            "msg_seq": seq,
+                            "pv:b": f"iter2-{seq}",
+                        },
+                        2,
+                    )
+                    for seq in range(2, 252)
+                ],
+                [
+                    client._dml__handle_recurring_snapshot_data(
+                        executor,
+                        snapshot,
+                        "perf-topic",
+                        {
+                            "timestamp": 1000 + seq,
+                            "iter_index": 1,
+                            "message_type": 1,
+                            "msg_seq": seq,
+                            "pv:a": f"iter1-{seq}",
+                        },
+                        1,
+                    )
+                    for seq in range(252, 502)
+                ],
+                client._dml__handle_recurring_snapshot_tail(
+                    executor,
+                    snapshot,
+                    "perf-topic",
+                    {
+                        "timestamp": 1505,
+                        "iter_index": 1,
+                        "message_type": 2,
+                        "msg_seq": 502,
+                        "total_messages": 502,
+                    },
+                    1,
+                ),
+                client._dml__handle_recurring_snapshot_tail(
+                    executor,
+                    snapshot,
+                    "perf-topic",
+                    {
+                        "timestamp": 2505,
+                        "iter_index": 2,
+                        "message_type": 2,
+                        "msg_seq": 252,
+                        "total_messages": 252,
+                    },
+                    2,
+                ),
+            ),
+        ),
+    ],
+)
+def test_recurring_snapshot_sequence_performance_scenarios(scenario_name, runner):
+    delivered = []
+    executor = DummyExecutor()
+    client = make_client()
+    snapshot = make_snapshot(lambda topic, data: delivered.append((topic, data)))
+
+    started = time.perf_counter()
+    runner(client, executor, snapshot, delivered)
+    elapsed = time.perf_counter() - started
+
+    assert elapsed >= 0
+    assert delivered, f"{scenario_name} should deliver at least one snapshot"
+
+    if scenario_name == "in_order":
+        assert delivered[0][1]["pv:a"][0] == "value-1"
+        assert delivered[0][1]["pv:a"][-1] == "value-500"
+    elif scenario_name == "intra_iteration_reorder":
+        assert delivered[0][1]["pv:a"][0] == "value-2"
+        assert delivered[0][1]["pv:a"][-1] == "value-501"
+    elif scenario_name == "iteration_overlap":
+        assert len(delivered) == 2
+        assert delivered[0][1]["iteration"] == 1
+        assert delivered[1][1]["iteration"] == 2
+        assert delivered[0][1]["pv:a"][0] == "iter1-2"
+        assert delivered[1][1]["pv:b"][0] == "iter2-2"
+
+    print(f"{scenario_name} elapsed={elapsed:.6f}s snapshots={len(delivered)}")

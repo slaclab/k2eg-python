@@ -303,7 +303,6 @@ def test_buffered_recurring_snapshot_orders_by_submission_seq():
 
 def test_buffered_recurring_snapshot_drops_iteration_without_submission_seq():
     delivered = []
-    executor = DummyExecutor()
     client = make_client()
     snapshot = make_buffered_snapshot(lambda topic, data: delivered.append((topic, data)))
 

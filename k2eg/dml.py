@@ -59,12 +59,34 @@ class RecurringIteration:
     # Out-of-order data messages are parked here by msg_seq until all lower
     # sequence numbers have been flushed into results.
     deferred_messages: Dict[int, tuple[str, Any]] = field(default_factory=dict)
+    header_submission_seq: Optional[int] = None
+    tail_submission_seq: Optional[int] = None
+    submission_buffers: Dict[int, "SubmissionBuffer"] = field(default_factory=dict)
+    invalid_reason: Optional[str] = None
 
-    def is_complete(self) -> bool:
+    def is_complete(self, use_submission_seq: bool = False) -> bool:
         """True when we have enough ordered data to publish the iteration."""
+        if self.invalid_reason is not None:
+            return False
         if self.tail_seq is None:
             return False
+        if use_submission_seq:
+            if self.total_messages is None:
+                return False
+            expected_data_messages = max(self.total_messages - 2, 0)
+            received_data_messages = sum(
+                len(buffer.messages) for buffer in self.submission_buffers.values()
+            )
+            return received_data_messages >= expected_data_messages
         return self.next_expected_seq > self.tail_seq - 1
+
+
+@dataclass
+class SubmissionBuffer:
+    """Track buffered recurring snapshot data for one submission batch."""
+    submission_seq: int
+    messages: List[tuple[str, Any]] = field(default_factory=list)
+    last_msg_seq: Optional[int] = None
 
 @dataclass
 class Snapshot:
@@ -223,6 +245,31 @@ class dml:
         snapshot.results = iteration_state.results
         snapshot.state = SnapshotState.HEADER_RECEVED
 
+    @staticmethod
+    def __uses_submission_seq(snapshot: Snapshot) -> bool:
+        return bool(
+            snapshot.properties is not None
+            and snapshot.properties.sub_push_delay_msec > 0
+        )
+
+    def __discard_iteration(self, snapshot: Snapshot, iteration_state: RecurringIteration):
+        if iteration_state is snapshot.active_iteration:
+            self.__promote_next_iteration(snapshot)
+        elif iteration_state is snapshot.next_iteration:
+            snapshot.next_iteration = None
+
+    def __invalidate_iteration(self, snapshot: Snapshot, iteration_state: RecurringIteration, from_topic: str, reason: str):
+        if iteration_state.invalid_reason is not None:
+            return
+        iteration_state.invalid_reason = reason
+        logger.error(
+            "Discarding recurring snapshot %s iteration %s: %s",
+            from_topic,
+            iteration_state.iteration,
+            reason,
+        )
+        self.__discard_iteration(snapshot, iteration_state)
+
     def __promote_next_iteration(self, snapshot: Snapshot):
         if snapshot.next_iteration is None:
             snapshot.clear()
@@ -234,7 +281,9 @@ class dml:
         next_iteration = snapshot.next_iteration
         snapshot.next_iteration = None
         self.__set_active_iteration(snapshot, next_iteration)
-        if next_iteration.deferred_messages:
+        if self.__uses_submission_seq(snapshot):
+            self.__refresh_iteration_legacy_fields(snapshot, next_iteration)
+        elif next_iteration.deferred_messages:
             self.__flush_iteration_messages(snapshot, next_iteration)
         self.__update_snapshot_state(snapshot)
 
@@ -245,6 +294,8 @@ class dml:
             return
         if iteration_state.tail_seq is not None:
             snapshot.state = SnapshotState.TAIL_RECEIVED
+        elif self.__uses_submission_seq(snapshot) and iteration_state.submission_buffers:
+            snapshot.state = SnapshotState.DATA_ACQUIRING
         elif iteration_state.next_expected_seq > 2:
             snapshot.state = SnapshotState.DATA_ACQUIRING
         else:
@@ -262,9 +313,77 @@ class dml:
         snapshot.interation = iteration_state.iteration
         snapshot.timestamp = iteration_state.header_timestamp
 
+    def __refresh_iteration_legacy_fields(self, snapshot: Snapshot, iteration_state: RecurringIteration):
+        snapshot.results = iteration_state.results
+        snapshot.interation = iteration_state.iteration
+        snapshot.timestamp = iteration_state.header_timestamp
+
+    def __append_submission_message(
+        self,
+        snapshot: Snapshot,
+        iteration_state: RecurringIteration,
+        from_topic: str,
+        submission_seq: Optional[int],
+        msg_seq: int,
+        pv_name: str,
+        value: Any,
+    ) -> bool:
+        if submission_seq is None:
+            self.__invalidate_iteration(
+                snapshot,
+                iteration_state,
+                from_topic,
+                "buffered recurring snapshot message is missing submission_seq",
+            )
+            return False
+
+        if (
+            iteration_state.header_submission_seq is not None
+            and submission_seq < iteration_state.header_submission_seq
+        ):
+            self.__invalidate_iteration(
+                snapshot,
+                iteration_state,
+                from_topic,
+                f"submission_seq {submission_seq} is before header submission_seq {iteration_state.header_submission_seq}",
+            )
+            return False
+
+        submission_buffer = iteration_state.submission_buffers.setdefault(
+            submission_seq,
+            SubmissionBuffer(submission_seq=submission_seq),
+        )
+        if submission_buffer.last_msg_seq is not None and msg_seq <= submission_buffer.last_msg_seq:
+            self.__invalidate_iteration(
+                snapshot,
+                iteration_state,
+                from_topic,
+                f"submission_seq {submission_seq} received non-monotonic msg_seq {msg_seq}",
+            )
+            return False
+
+        submission_buffer.messages.append((pv_name, value))
+        submission_buffer.last_msg_seq = msg_seq
+        self.__refresh_iteration_legacy_fields(snapshot, iteration_state)
+        return True
+
     def __finalize_recurring_iteration(self, executor, snapshot: Snapshot, from_topic: str):
         iteration_state = snapshot.active_iteration
-        if iteration_state is None or not iteration_state.is_complete():
+        use_submission_seq = self.__uses_submission_seq(snapshot)
+        if iteration_state is None or not iteration_state.is_complete(use_submission_seq=use_submission_seq):
+            return
+
+        if iteration_state.invalid_reason is not None:
+            self.__discard_iteration(snapshot, iteration_state)
+            return
+
+        if use_submission_seq and iteration_state.header_submission_seq is None:
+            self.__invalidate_iteration(
+                snapshot,
+                iteration_state,
+                from_topic,
+                "buffered recurring snapshot iteration completed without a header submission_seq",
+            )
             return
 
         # total_messages is used only as a validation aid here. Ordering is driven
@@ -280,7 +399,12 @@ class dml:
 
         if iteration_state.total_messages is not None:
             expected_data_messages = max(iteration_state.total_messages - 2, 0)
-            received_data_messages = sum(len(values) for values in iteration_state.results.values()) + len(iteration_state.deferred_messages)
+            if use_submission_seq:
+                received_data_messages = sum(
+                    len(buffer.messages) for buffer in iteration_state.submission_buffers.values()
+                )
+            else:
+                received_data_messages = sum(len(values) for values in iteration_state.results.values()) + len(iteration_state.deferred_messages)
             if received_data_messages < expected_data_messages:
                 logger.warning(
                     "Recurring snapshot %s iteration %s incomplete: received %s/%s data messages",
@@ -289,6 +413,25 @@ class dml:
                     received_data_messages,
                     expected_data_messages,
                 )
+                return
+
+        if use_submission_seq:
+            if iteration_state.tail_submission_seq is not None:
+                highest_submission_seq = max(iteration_state.submission_buffers, default=iteration_state.header_submission_seq)
+                if highest_submission_seq is not None and highest_submission_seq > iteration_state.tail_submission_seq:
+                    self.__invalidate_iteration(
+                        snapshot,
+                        iteration_state,
+                        from_topic,
+                        f"observed submission_seq {highest_submission_seq} after tail submission_seq {iteration_state.tail_submission_seq}",
+                    )
+                    return
+            for pv_name in snapshot.pv_list:
+                iteration_state.results[pv_name] = []
+            for submission_seq in sorted(iteration_state.submission_buffers):
+                for pv_name, value in iteration_state.submission_buffers[submission_seq].messages:
+                    iteration_state.results[pv_name].append(value)
+            self.__refresh_iteration_legacy_fields(snapshot, iteration_state)
 
         handler_data = {
             "iteration": iteration_state.iteration,
@@ -310,10 +453,15 @@ class dml:
     def __handle_recurring_snapshot_header(self, snapshot, from_topic: str, decoded_message: dict, message_iteration: int):
         """Handle recurring snapshot header message (type 0)."""
         header_timestamp = decoded_message.get('timestamp')
+        header_submission_seq = decoded_message.get('submission_seq')
         active_iteration = snapshot.active_iteration
 
         if active_iteration is None:
             self.__set_active_iteration(snapshot, snapshot.create_iteration(message_iteration, header_timestamp))
+            if self.__uses_submission_seq(snapshot):
+                snapshot.active_iteration.header_submission_seq = header_submission_seq
+                if header_submission_seq is None:
+                    self.__invalidate_iteration(snapshot, snapshot.active_iteration, from_topic, "buffered recurring snapshot header is missing submission_seq")
             logger.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] and iteration {snapshot.interation}")
             return
 
@@ -321,6 +469,10 @@ class dml:
             if active_iteration.header_timestamp is None:
                 active_iteration.header_timestamp = header_timestamp
                 snapshot.timestamp = header_timestamp
+            if self.__uses_submission_seq(snapshot) and active_iteration.header_submission_seq is None:
+                active_iteration.header_submission_seq = header_submission_seq
+                if header_submission_seq is None:
+                    self.__invalidate_iteration(snapshot, active_iteration, from_topic, "buffered recurring snapshot header is missing submission_seq")
             return
 
         if message_iteration == active_iteration.iteration + 1:
@@ -328,6 +480,10 @@ class dml:
                 snapshot.next_iteration = snapshot.create_iteration(message_iteration, header_timestamp)
             elif snapshot.next_iteration.header_timestamp is None:
                 snapshot.next_iteration.header_timestamp = header_timestamp
+            if self.__uses_submission_seq(snapshot):
+                snapshot.next_iteration.header_submission_seq = header_submission_seq
+                if header_submission_seq is None:
+                    self.__invalidate_iteration(snapshot, snapshot.next_iteration, from_topic, "buffered recurring snapshot header is missing submission_seq")
             logger.debug("Cached recurring snapshot %s header for next iteration %s", from_topic, message_iteration)
             return
 
@@ -341,10 +497,11 @@ class dml:
 
     def __handle_recurring_snapshot_data(self, executor, snapshot, from_topic: str, decoded_message: dict, message_iteration: int):
         """Handle recurring snapshot data message (type 1)."""
-        recurring_data_metadata_keys = frozenset(('timestamp', 'iter_index', 'message_type', 'message-size', 'msg_seq'))
+        recurring_data_metadata_keys = frozenset(('timestamp', 'iter_index', 'message_type', 'message-size', 'msg_seq', 'submission_seq'))
 
         # Read msg_seq before stripping metadata
         msg_seq = decoded_message.get('msg_seq', 0)
+        submission_seq = decoded_message.get('submission_seq')
 
         # Remove metadata from the message
         for key in recurring_data_metadata_keys:
@@ -373,21 +530,35 @@ class dml:
             logger.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
             return
 
-        if msg_seq < target_iteration.next_expected_seq:
-            logger.debug(
-                "Ignoring duplicate/stale data message for snapshot %s iteration %s seq %s",
+        use_submission_seq = self.__uses_submission_seq(snapshot)
+        if use_submission_seq:
+            if not self.__append_submission_message(
+                snapshot,
+                target_iteration,
                 from_topic,
-                message_iteration,
+                submission_seq,
                 msg_seq,
-            )
-            return
+                pv_name,
+                value,
+            ):
+                return
+        else:
+            if msg_seq < target_iteration.next_expected_seq:
+                logger.debug(
+                    "Ignoring duplicate/stale data message for snapshot %s iteration %s seq %s",
+                    from_topic,
+                    message_iteration,
+                    msg_seq,
+                )
+                return
 
-        target_iteration.deferred_messages[msg_seq] = (pv_name, value)
+            target_iteration.deferred_messages[msg_seq] = (pv_name, value)
 
         if target_iteration is active_iteration:
-            # Try to advance the active iteration immediately after every message
-            # instead of sorting the whole buffer when the tail arrives.
-            self.__flush_iteration_messages(snapshot, target_iteration)
+            if not use_submission_seq:
+                # Try to advance the active iteration immediately after every message
+                # instead of sorting the whole buffer when the tail arrives.
+                self.__flush_iteration_messages(snapshot, target_iteration)
             self.__update_snapshot_state(snapshot)
             self.__finalize_recurring_iteration(executor, snapshot, from_topic)
 
@@ -411,11 +582,28 @@ class dml:
         target_iteration.tail_timestamp = decoded_message.get('timestamp')
         target_iteration.tail_seq = decoded_message.get('msg_seq')
         target_iteration.total_messages = decoded_message.get('total_messages')
+        if self.__uses_submission_seq(snapshot):
+            target_iteration.tail_submission_seq = decoded_message.get('submission_seq')
+            if target_iteration.tail_submission_seq is None:
+                self.__invalidate_iteration(snapshot, target_iteration, from_topic, "buffered recurring snapshot tail is missing submission_seq")
+                return
+            if (
+                target_iteration.header_submission_seq is not None
+                and target_iteration.tail_submission_seq < target_iteration.header_submission_seq
+            ):
+                self.__invalidate_iteration(
+                    snapshot,
+                    target_iteration,
+                    from_topic,
+                    f"tail submission_seq {target_iteration.tail_submission_seq} is before header submission_seq {target_iteration.header_submission_seq}",
+                )
+                return
 
         if target_iteration is active_iteration:
             # Tail can arrive before some lower seq data. Finalization waits until
             # the missing messages have been flushed in order.
-            self.__flush_iteration_messages(snapshot, target_iteration)
+            if not self.__uses_submission_seq(snapshot):
+                self.__flush_iteration_messages(snapshot, target_iteration)
             self.__update_snapshot_state(snapshot)
             self.__finalize_recurring_iteration(executor, snapshot, from_topic)
 

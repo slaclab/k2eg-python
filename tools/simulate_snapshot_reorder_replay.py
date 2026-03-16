@@ -178,27 +178,38 @@ def build_buffered_iteration_records(
     msg_seq = 2
     submission_seq = 1
     messages_in_submission = 0
+    pending: dict[str, Any] | None = None  # last record of the current batch, not yet appended
     for sample_index in range(samples_per_pv):
         for pv_name in pv_names:
             if messages_in_submission >= submission_batch_size:
+                # Close the current batch: mark its last record before appending
+                if pending is not None:
+                    pending["last_submission_data"] = True
+                    records.append(pending)
+                    pending = None
                 submission_seq += 1
                 messages_in_submission = 0
-            records.append(
-                {
-                    "message_type": 1,
-                    "iter_index": iteration,
-                    "msg_seq": msg_seq,
+            elif pending is not None:
+                records.append(pending)
+                pending = None
+            pending = {
+                "message_type": 1,
+                "iter_index": iteration,
+                "msg_seq": msg_seq,
+                "submission_seq": submission_seq,
+                "timestamp": base_timestamp_ns + sample_index,
+                pv_name: {
+                    "value": round(randomizer.random() * 1000.0, 6),
+                    "sample": sample_index,
                     "submission_seq": submission_seq,
-                    "timestamp": base_timestamp_ns + sample_index,
-                    pv_name: {
-                        "value": round(randomizer.random() * 1000.0, 6),
-                        "sample": sample_index,
-                        "submission_seq": submission_seq,
-                    },
-                }
-            )
+                },
+            }
             msg_seq += 1
             messages_in_submission += 1
+    # Close the final batch
+    if pending is not None:
+        pending["last_submission_data"] = True
+        records.append(pending)
 
     records.append(
         {
@@ -459,7 +470,7 @@ def write_stream(stream_path: Path, records: list[dict[str, Any]]):
             handle.write("\n")
 
 
-def replay_stream(dml_module, stream_path: Path, pv_names: list[str], topic: str, sub_push_delay_msec: int):
+def replay_stream(dml_module, stream_path: Path, pv_names: list[str], topic: str, sub_push_delay_msec: int, expected_iterations: int = 0):
     delivered: list[tuple[str, dict[str, Any]]] = []
     executor = DummyExecutor()
     client = make_client(dml_module)
@@ -480,6 +491,14 @@ def replay_stream(dml_module, stream_path: Path, pv_names: list[str], topic: str
                 client._dml__handle_recurring_snapshot_data(executor, snapshot, topic, dict(record), iteration)
             elif message_type == 2:
                 client._dml__handle_recurring_snapshot_tail(executor, snapshot, topic, dict(record), iteration)
+
+    # In buffered mode the merge worker runs on a daemon thread; wait for all
+    # deliveries to arrive before measuring elapsed time.
+    if sub_push_delay_msec > 0 and expected_iterations > 0:
+        deadline = time.monotonic() + 30.0
+        while len(delivered) < expected_iterations and time.monotonic() < deadline:
+            time.sleep(0.005)
+
     replay_elapsed = time.perf_counter() - replay_started
     delivered_values = sum(
         len(payload[pv_name])
@@ -560,6 +579,7 @@ def main():
         pv_names,
         "snapshot-replay",
         args.sub_push_delay_msec,
+        expected_iterations=args.iterations,
     )
     total_data_messages = expected_values_per_iteration * args.iterations
     total_stream_messages = len(replay_records)

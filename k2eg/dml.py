@@ -1,5 +1,6 @@
 import re
 import uuid
+import queue
 import msgpack
 import logging
 import threading
@@ -63,6 +64,7 @@ class RecurringIteration:
     tail_submission_seq: Optional[int] = None
     submission_buffers: Dict[int, "SubmissionBuffer"] = field(default_factory=dict)
     invalid_reason: Optional[str] = None
+    merge_queue: queue.SimpleQueue = field(default_factory=queue.SimpleQueue)
 
     def is_complete(self, use_submission_seq: bool = False) -> bool:
         """True when we have enough ordered data to publish the iteration."""
@@ -87,6 +89,7 @@ class SubmissionBuffer:
     submission_seq: int
     messages: List[tuple[str, Any]] = field(default_factory=list)
     last_msg_seq: Optional[int] = None
+    enqueued: bool = False
 
 @dataclass
 class Snapshot:
@@ -318,8 +321,28 @@ class dml:
         snapshot.interation = iteration_state.iteration
         snapshot.timestamp = iteration_state.header_timestamp
 
+    @staticmethod
+    def __group_and_enqueue(buffer: "SubmissionBuffer", merge_queue: queue.SimpleQueue) -> None:
+        """Group a sealed submission buffer's messages by PV name and enqueue the result (runs in worker thread)."""
+        try:
+            grouped: Dict[str, List[Any]] = {}
+            for pv_name, value in buffer.messages:
+                grouped.setdefault(pv_name, []).append(value)
+            merge_queue.put((buffer.submission_seq, grouped))
+        except Exception as exc:
+            # Signal the merge worker that this buffer failed so it does not hang.
+            merge_queue.put((buffer.submission_seq, exc))
+
+    @staticmethod
+    def __submit_buffer_for_grouping(executor, buffer: "SubmissionBuffer", merge_queue: queue.SimpleQueue) -> None:
+        """Mark a buffer as enqueued and submit it for off-thread grouping. No-op if already enqueued."""
+        if not buffer.enqueued:
+            buffer.enqueued = True
+            executor.submit(dml.__group_and_enqueue, buffer, merge_queue)
+
     def __append_submission_message(
         self,
+        executor,
         snapshot: Snapshot,
         iteration_state: RecurringIteration,
         from_topic: str,
@@ -327,6 +350,7 @@ class dml:
         msg_seq: int,
         pv_name: str,
         value: Any,
+        last_submission_data: bool = False,
     ) -> bool:
         if submission_seq is None:
             self.__invalidate_iteration(
@@ -349,10 +373,11 @@ class dml:
             )
             return False
 
-        submission_buffer = iteration_state.submission_buffers.setdefault(
-            submission_seq,
-            SubmissionBuffer(submission_seq=submission_seq),
-        )
+        submission_buffer = iteration_state.submission_buffers.get(submission_seq)
+        if submission_buffer is None:
+            submission_buffer = SubmissionBuffer(submission_seq=submission_seq)
+            iteration_state.submission_buffers[submission_seq] = submission_buffer
+
         if submission_buffer.last_msg_seq is not None and msg_seq <= submission_buffer.last_msg_seq:
             self.__invalidate_iteration(
                 snapshot,
@@ -364,7 +389,12 @@ class dml:
 
         submission_buffer.messages.append((pv_name, value))
         submission_buffer.last_msg_seq = msg_seq
-        self.__refresh_iteration_legacy_fields(snapshot, iteration_state)
+
+        # A submission is complete only when the server explicitly signals it
+        # via last_submission_data=True on the last message of the batch.
+        if last_submission_data:
+            self.__submit_buffer_for_grouping(executor, submission_buffer, iteration_state.merge_queue)
+
         return True
 
     def __finalize_recurring_iteration(self, executor, snapshot: Snapshot, from_topic: str):
@@ -426,12 +456,56 @@ class dml:
                         f"observed submission_seq {highest_submission_seq} after tail submission_seq {iteration_state.tail_submission_seq}",
                     )
                     return
-            for pv_name in snapshot.pv_list:
-                iteration_state.results[pv_name] = []
-            for submission_seq in sorted(iteration_state.submission_buffers):
-                for pv_name, value in iteration_state.submission_buffers[submission_seq].messages:
-                    iteration_state.results[pv_name].append(value)
-            self.__refresh_iteration_legacy_fields(snapshot, iteration_state)
+
+            captured_buffers = iteration_state.submission_buffers
+            captured_iter = iteration_state
+            merge_queue = iteration_state.merge_queue
+            pv_list = snapshot.pv_list
+            handler = snapshot.handler
+            expected_count = len(captured_buffers)
+
+            logger.debug(
+                f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] "
+                f"from {len(pv_list)} PVs with "
+                f"{sum(len(b.messages) for b in captured_buffers.values())} "
+                f"messages on iteration {captured_iter.iteration}"
+            )
+
+            # Enqueue any buffers not yet submitted for grouping
+            for buf in captured_buffers.values():
+                self.__submit_buffer_for_grouping(executor, buf, merge_queue)
+
+            def _merge_worker():
+                # Collect all grouped buffers from the queue (grouping runs in parallel
+                # in the thread pool), then sort by submission_seq and merge into results.
+                items = []
+                for _ in range(expected_count):
+                    seq, grouped_or_exc = merge_queue.get()
+                    if isinstance(grouped_or_exc, Exception):
+                        logger.error("Grouping failed for submission_seq %s in %s: %s", seq, from_topic, grouped_or_exc)
+                        return
+                    items.append((seq, grouped_or_exc))
+                items.sort(key=lambda x: x[0])
+                results = {pv: [] for pv in pv_list}
+                for _seq, grouped in items:
+                    for pv_name, values in grouped.items():
+                        results[pv_name].extend(values)
+                handler_data = {
+                    "iteration":        captured_iter.iteration,
+                    "header_timestamp": captured_iter.header_timestamp,
+                    "tail_timestamp":   captured_iter.tail_timestamp,
+                    "timestamp":        captured_iter.tail_timestamp,
+                }
+                for pv_name in pv_list:
+                    handler_data[pv_name] = results.get(pv_name, [])
+                try:
+                    handler(from_topic, handler_data)
+                except Exception:
+                    logger.exception("Handler raised an exception for snapshot %s", from_topic)
+
+            threading.Thread(target=_merge_worker, daemon=True).start()
+            self.__promote_next_iteration(snapshot)
+            return
 
         handler_data = {
             "iteration": iteration_state.iteration,
@@ -497,11 +571,15 @@ class dml:
 
     def __handle_recurring_snapshot_data(self, executor, snapshot, from_topic: str, decoded_message: dict, message_iteration: int):
         """Handle recurring snapshot data message (type 1)."""
-        recurring_data_metadata_keys = frozenset(('timestamp', 'iter_index', 'message_type', 'message-size', 'msg_seq', 'submission_seq'))
+        recurring_data_metadata_keys = frozenset((
+            'timestamp', 'iter_index', 'message_type', 'message-size',
+            'msg_seq', 'submission_seq', 'last_submission_data'
+        ))
 
         # Read msg_seq before stripping metadata
         msg_seq = decoded_message.get('msg_seq', 0)
         submission_seq = decoded_message.get('submission_seq')
+        last_submission_data = bool(decoded_message.get('last_submission_data', False))
 
         # Remove metadata from the message
         for key in recurring_data_metadata_keys:
@@ -533,6 +611,7 @@ class dml:
         use_submission_seq = self.__uses_submission_seq(snapshot)
         if use_submission_seq:
             if not self.__append_submission_message(
+                executor,
                 snapshot,
                 target_iteration,
                 from_topic,
@@ -540,6 +619,7 @@ class dml:
                 msg_seq,
                 pv_name,
                 value,
+                last_submission_data=last_submission_data,
             ):
                 return
         else:

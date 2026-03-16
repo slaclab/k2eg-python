@@ -52,7 +52,7 @@ services:
       - ../tests/k2eg-nttable-ioc.py:/db/k2eg-nttable-ioc.py
 
   k2eg:
-    image: ghcr.io/slaclab/k2eg/ubuntu:latest
+    image: ghcr.io/slaclab/k2eg/ubuntu:pr-162
     platform: linux/amd64
     pull_policy: always
     entrypoint: k2eg

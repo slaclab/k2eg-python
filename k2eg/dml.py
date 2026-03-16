@@ -52,8 +52,12 @@ class RecurringIteration:
     tail_timestamp: Optional[int] = None
     tail_seq: Optional[int] = None
     total_messages: Optional[int] = None
+    # msg_seq=1 is always the header, so data can only be appended once the
+    # client has seen the next contiguous sequence number starting from 2.
     next_expected_seq: int = 2
     results: Dict[str, List[Any]] = field(default_factory=dict)
+    # Out-of-order data messages are parked here by msg_seq until all lower
+    # sequence numbers have been flushed into results.
     deferred_messages: Dict[int, tuple[str, Any]] = field(default_factory=dict)
 
     def is_complete(self) -> bool:

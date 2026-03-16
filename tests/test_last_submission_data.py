@@ -8,12 +8,9 @@ so that _merge_worker has less inline work to do at finalization time.
 
 import importlib.util
 import sys
-import threading
 import time
 import types
 from pathlib import Path
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Stub out C-extension dependencies so the module can be imported without a

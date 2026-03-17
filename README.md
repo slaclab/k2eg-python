@@ -236,6 +236,7 @@ Creates a recurring snapshot for a list of PVs.
     - **`sub_push_delay_msec`** (`int`, optional):  
       Specifies a sub-interval (in milliseconds) within the overall `time_window`. Instead of waiting until the end of the `time_window` to send all acquired events, the gateway will push partial results to the client every `sub_push_delay_msec`.  
       This reduces latency for large snapshots, especially when monitoring many PVs that update at a high rate, by delivering data incrementally rather than in a single batch at the end of the window.
+      Buffered recurring snapshots rely on gateway support for `submission_seq` so the client can reassemble batched deliveries correctly.
     - **`triggered`** (`bool`, optional):  
       If `True`, the snapshot is triggered manually using `snapshost_trigger()`. If `False`, snapshots are taken automatically.
     - **Other fields**:  
@@ -246,6 +247,7 @@ Creates a recurring snapshot for a list of PVs.
 
 > **Note:**  
 > The `SnapshotProperties` object allows fine-grained control over how and when snapshots are taken, including which PVs to include, how often to repeat, and whether snapshots are triggered automatically or manually.
+> For buffered recurring snapshots (`sub_push_delay_msec > 0`), the Python client keeps the callback payload shape unchanged, but now expects the gateway protocol to include `submission_seq` on recurring snapshot messages.
 
 ---
 

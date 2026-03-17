@@ -1,5 +1,6 @@
 import re
 import uuid
+import queue
 import msgpack
 import logging
 import threading
@@ -13,7 +14,7 @@ from k2eg.broker import Broker, SnapshotProperties
 from k2eg.serialization import MessagePackSerializable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Callable, List, Dict, Any
+from typing import Callable, List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__) 
 _protocol_regex = r"^(pva?|ca)://((?:[A-Za-z0-9-_:]+(?:\.[A-Za-z0-9-_]+)*))$"
@@ -45,24 +46,86 @@ class SnapshotState(Enum):
     TAIL_RECEIVED = 3
 
 @dataclass
+class RecurringIteration:
+    """Track sequencing state for one recurring snapshot iteration."""
+    iteration: int
+    header_timestamp: Optional[int] = None
+    tail_timestamp: Optional[int] = None
+    tail_seq: Optional[int] = None
+    total_messages: Optional[int] = None
+    # msg_seq=1 is always the header, so data can only be appended once the
+    # client has seen the next contiguous sequence number starting from 2.
+    next_expected_seq: int = 2
+    results: Dict[str, List[Any]] = field(default_factory=dict)
+    # Out-of-order data messages are parked here by msg_seq until all lower
+    # sequence numbers have been flushed into results.
+    deferred_messages: Dict[int, tuple[str, Any]] = field(default_factory=dict)
+    header_submission_seq: Optional[int] = None
+    tail_submission_seq: Optional[int] = None
+    submission_buffers: Dict[int, "SubmissionBuffer"] = field(default_factory=dict)
+    invalid_reason: Optional[str] = None
+    merge_queue: queue.SimpleQueue = field(default_factory=queue.SimpleQueue)
+
+    def is_complete(self, use_submission_seq: bool = False) -> bool:
+        """True when we have enough ordered data to publish the iteration."""
+        if self.invalid_reason is not None:
+            return False
+        if self.tail_seq is None:
+            return False
+        if use_submission_seq:
+            if self.total_messages is None:
+                return False
+            expected_data_messages = max(self.total_messages - 2, 0)
+            received_data_messages = sum(
+                len(buffer.messages) for buffer in self.submission_buffers.values()
+            )
+            return received_data_messages >= expected_data_messages
+        return self.next_expected_seq > self.tail_seq - 1
+
+
+@dataclass
+class SubmissionBuffer:
+    """Track buffered recurring snapshot data for one submission batch."""
+    submission_seq: int
+    messages: List[tuple[str, Any]] = field(default_factory=list)
+    last_msg_seq: Optional[int] = None
+    enqueued: bool = False
+
+@dataclass
 class Snapshot:
     handler: Callable[[str, Dict[str, Any]], None]
     properties: SnapshotProperties = None
     publishing_topic: str = None
-    state: SnapshotState = SnapshotState.INITIALIZED 
+    state: SnapshotState = SnapshotState.INITIALIZED
     timestamp: datetime.datetime = None
     interation: int = 0
     pv_list: List[str] = field(default_factory=list)
     results: Dict[str, List[Any]] = field(default_factory=dict[str, List[Any]])
+    active_iteration: Optional[RecurringIteration] = None
+    next_iteration: Optional[RecurringIteration] = None
+
     def init(self):
         # fill the results with empty lists for each pv
         for pv in self.pv_list:
             self.results[pv] = []
-            
+
+    def create_iteration(self, iteration: int, header_timestamp: Optional[int] = None) -> RecurringIteration:
+        new_iteration = RecurringIteration(
+            iteration=iteration,
+            header_timestamp=header_timestamp,
+            results={pv: [] for pv in self.pv_list},
+        )
+        return new_iteration
+
     def clear(self):
         """Clear all lists in the results dictionary without removing the keys."""
         for key in self.results:
             self.results[key] = []
+        self.timestamp = None
+        self.interation = 0
+        self.state = SnapshotState.INITIALIZED
+        self.active_iteration = None
+        self.next_iteration = None
             
 class dml:
     """K2EG client"""
@@ -92,6 +155,9 @@ class dml:
         self.reply_wait_condition = threading.Condition()
         self.reply_ready_event = threading.Event()
         self.reply_message = {}
+        # Track reply IDs that timed out so we can detect late Kafka replies.
+        self.__timed_out_replies = {}
+        self.__timed_out_replies_ttl_sec = 300
         #contain a vector for each reply id where snapshot are stored
         self.reply_snapsthot_message = {}
         self.reply_recurring_snapsthot_message = {}
@@ -157,152 +223,618 @@ class dml:
                         msg.value()
                         )
                 break   
+        if msg_id is None:
+            logger.debug(
+                "Unable to decode incoming message: missing/unsupported 'k2eg-ser-type' header. headers=%s",
+                headers,
+            )
         return msg_id, converted_msg
 
     def process_event(self, topic_name, msg_id, decoded_message):
         logger.debug(f"received event on topic {topic_name}")
         self.__monitor_pv_handler[msg_id](msg_id, decoded_message)
     
+    @staticmethod
+    def _extract_remaining_dict_item(d: dict):
+        """Extract the first remaining key-value pair from a dict."""
+        return next(iter(d.items()))
+
+    def __set_active_iteration(self, snapshot: Snapshot, iteration_state: RecurringIteration):
+        # Mirror the active iteration into the legacy snapshot fields so the public
+        # handler payload and existing logging keep the same shape.
+        snapshot.active_iteration = iteration_state
+        snapshot.interation = iteration_state.iteration
+        snapshot.timestamp = iteration_state.header_timestamp
+        snapshot.results = iteration_state.results
+        snapshot.state = SnapshotState.HEADER_RECEVED
+
+    @staticmethod
+    def __uses_submission_seq(snapshot: Snapshot) -> bool:
+        return bool(
+            snapshot.properties is not None
+            and snapshot.properties.sub_push_delay_msec > 0
+        )
+
+    def __discard_iteration(self, snapshot: Snapshot, iteration_state: RecurringIteration):
+        if iteration_state is snapshot.active_iteration:
+            self.__promote_next_iteration(snapshot)
+        elif iteration_state is snapshot.next_iteration:
+            snapshot.next_iteration = None
+
+    def __invalidate_iteration(self, snapshot: Snapshot, iteration_state: RecurringIteration, from_topic: str, reason: str):
+        if iteration_state.invalid_reason is not None:
+            return
+        iteration_state.invalid_reason = reason
+        logger.error(
+            "Discarding recurring snapshot %s iteration %s: %s",
+            from_topic,
+            iteration_state.iteration,
+            reason,
+        )
+        self.__discard_iteration(snapshot, iteration_state)
+
+    def __promote_next_iteration(self, snapshot: Snapshot):
+        if snapshot.next_iteration is None:
+            snapshot.clear()
+            return
+
+        # The next iteration may already have buffered data because Kafka delivery
+        # can overlap consecutive iterations. Promote it immediately and drain any
+        # contiguous seq numbers we already have.
+        next_iteration = snapshot.next_iteration
+        snapshot.next_iteration = None
+        self.__set_active_iteration(snapshot, next_iteration)
+        if self.__uses_submission_seq(snapshot):
+            self.__refresh_iteration_legacy_fields(snapshot, next_iteration)
+        elif next_iteration.deferred_messages:
+            self.__flush_iteration_messages(snapshot, next_iteration)
+        self.__update_snapshot_state(snapshot)
+
+    def __update_snapshot_state(self, snapshot: Snapshot):
+        iteration_state = snapshot.active_iteration
+        if iteration_state is None:
+            snapshot.state = SnapshotState.INITIALIZED
+            return
+        if iteration_state.tail_seq is not None:
+            snapshot.state = SnapshotState.TAIL_RECEIVED
+        elif self.__uses_submission_seq(snapshot) and iteration_state.submission_buffers:
+            snapshot.state = SnapshotState.DATA_ACQUIRING
+        elif iteration_state.next_expected_seq > 2:
+            snapshot.state = SnapshotState.DATA_ACQUIRING
+        else:
+            snapshot.state = SnapshotState.HEADER_RECEVED
+
+    def __flush_iteration_messages(self, snapshot: Snapshot, iteration_state: RecurringIteration):
+        # Messages are appended only when their msg_seq becomes the next expected
+        # one. Higher seq numbers stay buffered until the missing gap arrives.
+        while iteration_state.next_expected_seq in iteration_state.deferred_messages:
+            pv_name, value = iteration_state.deferred_messages.pop(iteration_state.next_expected_seq)
+            iteration_state.results[pv_name].append(value)
+            iteration_state.next_expected_seq += 1
+
+        snapshot.results = iteration_state.results
+        snapshot.interation = iteration_state.iteration
+        snapshot.timestamp = iteration_state.header_timestamp
+
+    def __refresh_iteration_legacy_fields(self, snapshot: Snapshot, iteration_state: RecurringIteration):
+        snapshot.results = iteration_state.results
+        snapshot.interation = iteration_state.iteration
+        snapshot.timestamp = iteration_state.header_timestamp
+
+    @staticmethod
+    def __group_and_enqueue(buffer: "SubmissionBuffer", merge_queue: queue.SimpleQueue) -> None:
+        """Group a sealed submission buffer's messages by PV name and enqueue the result (runs in worker thread)."""
+        try:
+            grouped: Dict[str, List[Any]] = {}
+            for pv_name, value in buffer.messages:
+                grouped.setdefault(pv_name, []).append(value)
+            merge_queue.put((buffer.submission_seq, grouped))
+        except Exception as exc:
+            # Signal the merge worker that this buffer failed so it does not hang.
+            merge_queue.put((buffer.submission_seq, exc))
+
+    @staticmethod
+    def __submit_buffer_for_grouping(executor, buffer: "SubmissionBuffer", merge_queue: queue.SimpleQueue) -> None:
+        """Mark a buffer as enqueued and submit it for off-thread grouping. No-op if already enqueued."""
+        if not buffer.enqueued:
+            buffer.enqueued = True
+            executor.submit(dml.__group_and_enqueue, buffer, merge_queue)
+
+    def __append_submission_message(
+        self,
+        executor,
+        snapshot: Snapshot,
+        iteration_state: RecurringIteration,
+        from_topic: str,
+        submission_seq: Optional[int],
+        msg_seq: int,
+        pv_name: str,
+        value: Any,
+        last_submission_data: bool = False,
+    ) -> bool:
+        if submission_seq is None:
+            self.__invalidate_iteration(
+                snapshot,
+                iteration_state,
+                from_topic,
+                "buffered recurring snapshot message is missing submission_seq",
+            )
+            return False
+
+        if (
+            iteration_state.header_submission_seq is not None
+            and submission_seq < iteration_state.header_submission_seq
+        ):
+            self.__invalidate_iteration(
+                snapshot,
+                iteration_state,
+                from_topic,
+                f"submission_seq {submission_seq} is before header submission_seq {iteration_state.header_submission_seq}",
+            )
+            return False
+
+        submission_buffer = iteration_state.submission_buffers.get(submission_seq)
+        if submission_buffer is None:
+            submission_buffer = SubmissionBuffer(submission_seq=submission_seq)
+            iteration_state.submission_buffers[submission_seq] = submission_buffer
+
+        if submission_buffer.last_msg_seq is not None and msg_seq <= submission_buffer.last_msg_seq:
+            self.__invalidate_iteration(
+                snapshot,
+                iteration_state,
+                from_topic,
+                f"submission_seq {submission_seq} received non-monotonic msg_seq {msg_seq}",
+            )
+            return False
+
+        submission_buffer.messages.append((pv_name, value))
+        submission_buffer.last_msg_seq = msg_seq
+
+        # A submission is complete only when the server explicitly signals it
+        # via last_submission_data=True on the last message of the batch.
+        if last_submission_data:
+            self.__submit_buffer_for_grouping(executor, submission_buffer, iteration_state.merge_queue)
+
+        return True
+
+    def __finalize_recurring_iteration(self, executor, snapshot: Snapshot, from_topic: str):
+        iteration_state = snapshot.active_iteration
+        use_submission_seq = self.__uses_submission_seq(snapshot)
+        if iteration_state is None or not iteration_state.is_complete(use_submission_seq=use_submission_seq):
+            return
+
+        if iteration_state.invalid_reason is not None:
+            self.__discard_iteration(snapshot, iteration_state)
+            return
+
+        if use_submission_seq and iteration_state.header_submission_seq is None:
+            self.__invalidate_iteration(
+                snapshot,
+                iteration_state,
+                from_topic,
+                "buffered recurring snapshot iteration completed without a header submission_seq",
+            )
+            return
+
+        # total_messages is used only as a validation aid here. Ordering is driven
+        # entirely by msg_seq and the contiguous flush above.
+        if iteration_state.total_messages is not None and iteration_state.tail_seq != iteration_state.total_messages:
+            logger.warning(
+                "Recurring snapshot %s iteration %s tail msg_seq=%s differs from total_messages=%s",
+                from_topic,
+                iteration_state.iteration,
+                iteration_state.tail_seq,
+                iteration_state.total_messages,
+            )
+
+        if iteration_state.total_messages is not None:
+            expected_data_messages = max(iteration_state.total_messages - 2, 0)
+            if use_submission_seq:
+                received_data_messages = sum(
+                    len(buffer.messages) for buffer in iteration_state.submission_buffers.values()
+                )
+            else:
+                received_data_messages = sum(len(values) for values in iteration_state.results.values()) + len(iteration_state.deferred_messages)
+            if received_data_messages < expected_data_messages:
+                logger.warning(
+                    "Recurring snapshot %s iteration %s incomplete: received %s/%s data messages",
+                    from_topic,
+                    iteration_state.iteration,
+                    received_data_messages,
+                    expected_data_messages,
+                )
+                return
+
+        if use_submission_seq:
+            if iteration_state.tail_submission_seq is not None:
+                highest_submission_seq = max(iteration_state.submission_buffers, default=iteration_state.header_submission_seq)
+                if highest_submission_seq is not None and highest_submission_seq > iteration_state.tail_submission_seq:
+                    self.__invalidate_iteration(
+                        snapshot,
+                        iteration_state,
+                        from_topic,
+                        f"observed submission_seq {highest_submission_seq} after tail submission_seq {iteration_state.tail_submission_seq}",
+                    )
+                    return
+
+            captured_buffers = iteration_state.submission_buffers
+            captured_iter = iteration_state
+            merge_queue = iteration_state.merge_queue
+            pv_list = snapshot.pv_list
+            handler = snapshot.handler
+            expected_count = len(captured_buffers)
+
+            logger.debug(
+                f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] "
+                f"from {len(pv_list)} PVs with "
+                f"{sum(len(b.messages) for b in captured_buffers.values())} "
+                f"messages on iteration {captured_iter.iteration}"
+            )
+
+            # Enqueue any buffers not yet submitted for grouping
+            for buf in captured_buffers.values():
+                self.__submit_buffer_for_grouping(executor, buf, merge_queue)
+
+            def _merge_worker():
+                # Collect all grouped buffers from the queue (grouping runs in parallel
+                # in the thread pool), then sort by submission_seq and merge into results.
+                items = []
+                for _ in range(expected_count):
+                    seq, grouped_or_exc = merge_queue.get()
+                    if isinstance(grouped_or_exc, Exception):
+                        logger.error("Grouping failed for submission_seq %s in %s: %s", seq, from_topic, grouped_or_exc)
+                        return
+                    items.append((seq, grouped_or_exc))
+                items.sort(key=lambda x: x[0])
+                results = {pv: [] for pv in pv_list}
+                for _seq, grouped in items:
+                    for pv_name, values in grouped.items():
+                        results[pv_name].extend(values)
+                handler_data = {
+                    "iteration":        captured_iter.iteration,
+                    "header_timestamp": captured_iter.header_timestamp,
+                    "tail_timestamp":   captured_iter.tail_timestamp,
+                    "timestamp":        captured_iter.tail_timestamp,
+                }
+                for pv_name in pv_list:
+                    handler_data[pv_name] = results.get(pv_name, [])
+                try:
+                    handler(from_topic, handler_data)
+                except Exception:
+                    logger.exception("Handler raised an exception for snapshot %s", from_topic)
+
+            threading.Thread(target=_merge_worker, daemon=True).start()
+            self.__promote_next_iteration(snapshot)
+            return
+
+        handler_data = {
+            "iteration": iteration_state.iteration,
+            "header_timestamp": iteration_state.header_timestamp,
+            "tail_timestamp": iteration_state.tail_timestamp,
+            "timestamp": iteration_state.tail_timestamp,
+        }
+        for pv_name in snapshot.pv_list:
+            handler_data[pv_name] = iteration_state.results.get(pv_name, [])
+
+        logger.debug(
+            f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] "
+            f"fromm {len(handler_data)} PVs with {sum(len(v) for v in iteration_state.results.values())} "
+            f"messages on iteration {iteration_state.iteration}"
+        )
+        executor.submit(snapshot.handler, from_topic, handler_data)
+        self.__promote_next_iteration(snapshot)
+
+    def __handle_recurring_snapshot_header(self, snapshot, from_topic: str, decoded_message: dict, message_iteration: int):
+        """Handle recurring snapshot header message (type 0)."""
+        header_timestamp = decoded_message.get('timestamp')
+        header_submission_seq = decoded_message.get('submission_seq')
+        active_iteration = snapshot.active_iteration
+
+        if active_iteration is None:
+            self.__set_active_iteration(snapshot, snapshot.create_iteration(message_iteration, header_timestamp))
+            if self.__uses_submission_seq(snapshot):
+                snapshot.active_iteration.header_submission_seq = header_submission_seq
+                if header_submission_seq is None:
+                    self.__invalidate_iteration(snapshot, snapshot.active_iteration, from_topic, "buffered recurring snapshot header is missing submission_seq")
+            logger.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] and iteration {snapshot.interation}")
+            return
+
+        if message_iteration == active_iteration.iteration:
+            if active_iteration.header_timestamp is None:
+                active_iteration.header_timestamp = header_timestamp
+                snapshot.timestamp = header_timestamp
+            if self.__uses_submission_seq(snapshot) and active_iteration.header_submission_seq is None:
+                active_iteration.header_submission_seq = header_submission_seq
+                if header_submission_seq is None:
+                    self.__invalidate_iteration(snapshot, active_iteration, from_topic, "buffered recurring snapshot header is missing submission_seq")
+            return
+
+        if message_iteration == active_iteration.iteration + 1:
+            if snapshot.next_iteration is None or snapshot.next_iteration.iteration != message_iteration:
+                snapshot.next_iteration = snapshot.create_iteration(message_iteration, header_timestamp)
+            elif snapshot.next_iteration.header_timestamp is None:
+                snapshot.next_iteration.header_timestamp = header_timestamp
+            if self.__uses_submission_seq(snapshot):
+                snapshot.next_iteration.header_submission_seq = header_submission_seq
+                if header_submission_seq is None:
+                    self.__invalidate_iteration(snapshot, snapshot.next_iteration, from_topic, "buffered recurring snapshot header is missing submission_seq")
+            logger.debug("Cached recurring snapshot %s header for next iteration %s", from_topic, message_iteration)
+            return
+
+        logger.debug(
+            "Ignoring recurring snapshot %s header for iteration %s while active=%s next=%s",
+            from_topic,
+            message_iteration,
+            active_iteration.iteration,
+            snapshot.next_iteration.iteration if snapshot.next_iteration else None,
+        )
+
+    def __handle_recurring_snapshot_data(self, executor, snapshot, from_topic: str, decoded_message: dict, message_iteration: int):
+        """Handle recurring snapshot data message (type 1)."""
+        recurring_data_metadata_keys = frozenset((
+            'timestamp', 'iter_index', 'message_type', 'message-size',
+            'msg_seq', 'submission_seq', 'last_submission_data'
+        ))
+
+        # Read msg_seq before stripping metadata
+        msg_seq = decoded_message.get('msg_seq', 0)
+        submission_seq = decoded_message.get('submission_seq')
+        last_submission_data = bool(decoded_message.get('last_submission_data', False))
+
+        # Remove metadata from the message
+        for key in recurring_data_metadata_keys:
+            decoded_message.pop(key, None)
+
+        # Now the remaining key is the pv name
+        pv_name, value = self._extract_remaining_dict_item(decoded_message)
+        if pv_name not in snapshot.pv_list:
+            logger.warning(f"Received data for unexpected PV '{pv_name}' in snapshot {from_topic}")
+            return
+
+        active_iteration = snapshot.active_iteration
+        if active_iteration is None:
+            logger.debug("Ignoring recurring snapshot %s data for iteration %s before header", from_topic, message_iteration)
+            return
+
+        if message_iteration == active_iteration.iteration:
+            target_iteration = active_iteration
+        elif message_iteration == active_iteration.iteration + 1:
+            # Cache one future iteration so we can keep consuming overlap without
+            # blocking the current iteration finalization path.
+            if snapshot.next_iteration is None or snapshot.next_iteration.iteration != message_iteration:
+                snapshot.next_iteration = snapshot.create_iteration(message_iteration)
+            target_iteration = snapshot.next_iteration
+        else:
+            logger.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
+            return
+
+        use_submission_seq = self.__uses_submission_seq(snapshot)
+        if use_submission_seq:
+            if not self.__append_submission_message(
+                executor,
+                snapshot,
+                target_iteration,
+                from_topic,
+                submission_seq,
+                msg_seq,
+                pv_name,
+                value,
+                last_submission_data=last_submission_data,
+            ):
+                return
+        else:
+            if msg_seq < target_iteration.next_expected_seq:
+                logger.debug(
+                    "Ignoring duplicate/stale data message for snapshot %s iteration %s seq %s",
+                    from_topic,
+                    message_iteration,
+                    msg_seq,
+                )
+                return
+
+            target_iteration.deferred_messages[msg_seq] = (pv_name, value)
+
+        if target_iteration is active_iteration:
+            if not use_submission_seq:
+                # Try to advance the active iteration immediately after every message
+                # instead of sorting the whole buffer when the tail arrives.
+                self.__flush_iteration_messages(snapshot, target_iteration)
+            self.__update_snapshot_state(snapshot)
+            self.__finalize_recurring_iteration(executor, snapshot, from_topic)
+
+    def __handle_recurring_snapshot_tail(self, executor, snapshot, from_topic: str, decoded_message: dict, message_iteration: int):
+        """Handle recurring snapshot tail message (type 2)."""
+        active_iteration = snapshot.active_iteration
+        if active_iteration is None:
+            logger.debug("Ignoring recurring snapshot %s tail for iteration %s before header", from_topic, message_iteration)
+            return
+
+        if message_iteration == active_iteration.iteration:
+            target_iteration = active_iteration
+        elif message_iteration == active_iteration.iteration + 1:
+            if snapshot.next_iteration is None or snapshot.next_iteration.iteration != message_iteration:
+                snapshot.next_iteration = snapshot.create_iteration(message_iteration)
+            target_iteration = snapshot.next_iteration
+        else:
+            logger.debug(f"Ignoring tail message from iteration {message_iteration}, current iteration is {snapshot.interation}")
+            return
+
+        target_iteration.tail_timestamp = decoded_message.get('timestamp')
+        target_iteration.tail_seq = decoded_message.get('msg_seq')
+        target_iteration.total_messages = decoded_message.get('total_messages')
+        if self.__uses_submission_seq(snapshot):
+            target_iteration.tail_submission_seq = decoded_message.get('submission_seq')
+            if target_iteration.tail_submission_seq is None:
+                self.__invalidate_iteration(snapshot, target_iteration, from_topic, "buffered recurring snapshot tail is missing submission_seq")
+                return
+            if (
+                target_iteration.header_submission_seq is not None
+                and target_iteration.tail_submission_seq < target_iteration.header_submission_seq
+            ):
+                self.__invalidate_iteration(
+                    snapshot,
+                    target_iteration,
+                    from_topic,
+                    f"tail submission_seq {target_iteration.tail_submission_seq} is before header submission_seq {target_iteration.header_submission_seq}",
+                )
+                return
+
+        if target_iteration is active_iteration:
+            # Tail can arrive before some lower seq data. Finalization waits until
+            # the missing messages have been flushed in order.
+            if not self.__uses_submission_seq(snapshot):
+                self.__flush_iteration_messages(snapshot, target_iteration)
+            self.__update_snapshot_state(snapshot)
+            self.__finalize_recurring_iteration(executor, snapshot, from_topic)
+
+    def __handle_reply_message(self, msg_id: str, decoded_message: dict, from_topic: str):
+        """Handle reply messages."""
+        logger.debug(f"received reply on topic {from_topic}")
+        self.reply_message[msg_id] = decoded_message
+        self.reply_wait_condition.notify_all()
+
+    def __handle_monitor_event(self, executor, from_topic: str, msg_id: str, decoded_message: dict):
+        """Handle monitor events by submitting to thread pool."""
+        executor.submit(
+            self.process_event,
+            from_topic,
+            msg_id,
+            decoded_message[msg_id]
+        )
+
+    def __handle_snapshot_message(self, executor, from_topic: str, msg_id: str, decoded_message: dict):
+        """Handle snapshot messages (both regular and recurring)."""
+        # Check if it's a regular snapshot
+        if msg_id in self.reply_snapsthot_message:
+            self.__handle_regular_snapshot(executor, msg_id, decoded_message)
+        # Check if it's a recurring snapshot
+        elif from_topic in self.reply_recurring_snapsthot_message:
+            self.__handle_recurring_snapshot(executor, from_topic, decoded_message)
+
+    def __handle_regular_snapshot(self, executor, msg_id: str, decoded_message: dict):
+        """Handle regular snapshot messages."""
+        snapshot_metadata_keys = frozenset(('error', 'reply_id', 'message-size', 'msg_seq'))
+        snapshot = self.reply_snapsthot_message[msg_id]
+        error = decoded_message.get('error', 0)
+
+        if error == 0:
+            logger.debug(f"Added message to snapshot {msg_id}]")
+            # Remove metadata from the message
+            for key in snapshot_metadata_keys:
+                decoded_message.pop(key, None)
+            # Now the remaining key is the pv name
+            pv_name, value = self._extract_remaining_dict_item(decoded_message)
+            if pv_name not in snapshot.results:
+                snapshot.results[pv_name] = []
+            snapshot.results[pv_name].append(value)
+        else:
+            logger.debug(f"Snapshot {msg_id} compelted with error {error}")
+            # we got the completion message so remove the snapshot from the list
+            del self.reply_snapsthot_message[msg_id]
+            # and call async handler in another thread
+            executor.submit(
+                snapshot.handler,
+                msg_id,
+                snapshot.results
+            )
+
+    def __handle_recurring_snapshot(self, executor, from_topic: str, decoded_message: dict):
+        """Handle recurring snapshot messages with dispatch pattern."""
+        snapshot = self.reply_recurring_snapsthot_message[from_topic]
+        message_type = decoded_message.get('message_type')
+        if message_type is None:
+            return
+
+        message_iteration = decoded_message.get('iter_index', 0)
+
+        # Dictionary dispatch pattern (Python 3.9+ alternative to switch/case)
+        handlers = {
+            0: lambda: self.__handle_recurring_snapshot_header(snapshot, from_topic, decoded_message, message_iteration),
+            1: lambda: self.__handle_recurring_snapshot_data(executor, snapshot, from_topic, decoded_message, message_iteration),
+            2: lambda: self.__handle_recurring_snapshot_tail(executor, snapshot, from_topic, decoded_message, message_iteration),
+        }
+
+        handler = handlers.get(message_type)
+        if handler:
+            handler()
+        else:
+            logger.error(f"Error during snapshot {from_topic} with message type {message_type} and state {snapshot.state} and iteration {snapshot.interation} and timestamp {snapshot.timestamp}")
+
+    def __prune_timed_out_replies(self):
+        """Remove old timed-out reply IDs to avoid unbounded growth."""
+        now_ts = datetime.datetime.now().timestamp()
+        expired = [
+            rid for rid, timeout_ts in self.__timed_out_replies.items()
+            if (now_ts - timeout_ts) > self.__timed_out_replies_ttl_sec
+        ]
+        for rid in expired:
+            self.__timed_out_replies.pop(rid, None)
+
     def __consumer_handler(self):
         """ Consume message form kafka consumer
-        after the message has been consumed the header 'k2eg-ser-type' is checked 
+        after the message has been consumed the header 'k2eg-ser-type' is checked
         for find the serialization:
-            json, 
-            msgpack, 
+            json,
+            msgpack,
             msgpack-compact
         """
-        with  ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             while self.__consume_data:
                 message = self.__broker.get_next_message(self.poll_timeout)
-                if message is None: 
+                if message is None:
                     continue
-                if message.error():
-                    if message.error().code() == KafkaError._PARTITION_EOF:
+
+                err = message.error()
+                if err:
+                    if err.code() == KafkaError._PARTITION_EOF:
                         # End of partition event
                         logger.error(
                             f"{message.topic()} [{message.partition()}]reached "+
                             f"end at offset {message.offset()}"
                         )
-                    else:
-                        continue
-                else:
-                    was_a_reply = False
-                    from_topic = message.topic()
-                    #msg_id could be a reply id or pv name
-                    msg_id, decoded_message = self.__decode_message(message)
-                    if msg_id is None or decoded_message is None:
-                        continue
-                    with self.reply_wait_condition:
-                        was_a_reply = msg_id in self.reply_message
-                        if was_a_reply is True:
-                            # print(f"message received from topic: {message.topic()} offset: {message.offset()}")
-                            logger.debug(f"received reply on topic {message.topic()}")
-                            self.reply_message[msg_id] = decoded_message
-                            self.reply_wait_condition.notify_all()
-                        elif msg_id in self.__monitor_pv_handler:
-                                executor.submit(
-                                    self.process_event,
-                                    message.topic(),
-                                    msg_id,
-                                    decoded_message[msg_id]
-                                )
-                        elif msg_id in self.reply_snapsthot_message:
-                            # if the message is not a reply and not a monitor
-                            # it should be a snapshot
-                            snapshot = self.reply_snapsthot_message[msg_id]
-                            # check if the message is a snapshot completion error == 1
-                            if decoded_message.get('error', 0) == 0:
-                                logger.debug(f"Added message to snapshot {msg_id}]") 
-                                decoded_message.pop('error', None)
-                                decoded_message.pop('reply_id', None)
-                                decoded_message.pop('message-size', None)
-                                decoded_message.pop('msg_seq', None)
-                                # Now the remaining key is the pv name
-                                pv_name, value = next(iter(decoded_message.items()))
-                                if pv_name not in snapshot.results:
-                                    snapshot.results[pv_name] = []
-                                snapshot.results[pv_name].append(value)
-                            else:
-                                logger.debug(f"Snapshot {msg_id} compelted with error {decoded_message.get('error', 0)}")
-                                # we got the completion message so             
-                                # remove the snapshot from the list
-                                del self.reply_snapsthot_message[msg_id]
-                                # and call async handler in another thread
-                                executor.submit(
-                                    snapshot.handler,
-                                    msg_id,
-                                    snapshot.results
-                                )
-                        elif from_topic in self.reply_recurring_snapsthot_message:
-                             # it should be a recurring snapshot
-                            snapshot = self.reply_recurring_snapsthot_message[from_topic]
-                            message_type = decoded_message.get('message_type', None)
-                            if message_type is None:
-                                continue
-                            
-                            # Get the current iteration from the message
-                            message_iteration = decoded_message.get('iter_index', 0)
-                            
-                            if message_type == 0 and (snapshot.state == SnapshotState.INITIALIZED or snapshot.state == SnapshotState.TAIL_RECEIVED):
-                                snapshot.state = SnapshotState.HEADER_RECEVED
-                                # Get the timestamp and iteration
-                                snapshot.timestamp = decoded_message.get('timestamp', None)
-                                snapshot.interation = decoded_message.get('iter_index', 0)
-                                logger.debug(f"recurring snapshot {from_topic} header received [ state {snapshot.state}] and iteration {snapshot.interation}")
-                                
-                            elif message_type == 1 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
-                                # Only process data messages that match the current iteration
-                                if message_iteration == snapshot.interation:
-                                    snapshot.state = SnapshotState.DATA_ACQUIRING
-                                    # Remove metadata from the message
-                                    decoded_message.pop('timestamp', None)
-                                    decoded_message.pop('iter_index', None)
-                                    decoded_message.pop('message_type', None)
-                                    decoded_message.pop('message-size', None)
-                                    decoded_message.pop('msg_seq', None)
-                                    
-                                    # Now the remaining key is the pv name
-                                    pv_name, value = next(iter(decoded_message.items()))
-                                    if pv_name in snapshot.pv_list:
-                                        if pv_name not in snapshot.results:
-                                            snapshot.results[pv_name] = []
-                                        snapshot.results[pv_name].append(value)
-                                    else:
-                                        logger.warning(f"Received data for unexpected PV '{pv_name}' in snapshot {from_topic}")
-                                    #logger.debug(f"recurring snapshot {from_topic} data received [ state {snapshot.state}] messages {sum(len(v) for v in snapshot.results.values())} and iteration {snapshot.interation}")
-                                else:
-                                    logger.debug(f"Ignoring data message from iteration {message_iteration}, current iteration is {snapshot.interation}")
-                                    
-                            elif message_type == 2 and (snapshot.state == SnapshotState.HEADER_RECEVED or snapshot.state == SnapshotState.DATA_ACQUIRING):
-                                # Only process tail messages that match the current iteration
-                                if message_iteration == snapshot.interation:
-                                    snapshot.state = SnapshotState.TAIL_RECEIVED
-                                    # Build handler data with metadata
-                                    tail_ts = decoded_message.get('timestamp', None)
-                                    handler_data = {
-                                        "iteration": snapshot.interation,
-                                        "header_timestamp": snapshot.timestamp,
-                                        "tail_timestamp": tail_ts,
-                                        "timestamp": tail_ts,
-                                    }
-                                    # Add PV data
-                                    for pv_name in snapshot.pv_list:
-                                        if pv_name in snapshot.results:
-                                            handler_data[pv_name] = snapshot.results[pv_name]
-                                    
-                                    logger.debug(f"recurring snapshot {from_topic} tail received [ state {snapshot.state}] fromm {len(handler_data)} PVs with {sum(len(v) for v in snapshot.results.values())} messages on iteration {snapshot.interation}")
-                                    # Call handler asynchronously
-                                    executor.submit(
-                                        snapshot.handler,
-                                        from_topic,
-                                        handler_data
-                                    )
-                                    snapshot.clear()  # Clear results for the next iteration
-                                else:
-                                    logger.debug(f"Ignoring tail message from iteration {message_iteration}, current iteration is {snapshot.interation}")
-                            else:
-                                logger.error(f"Error during snapshot {from_topic} with message type {message_type} and state {snapshot.state} and iteration {snapshot.interation} and timestamp {snapshot.timestamp}")
+                    continue
 
+                from_topic = message.topic()
+                #msg_id could be a reply id or pv name
+                msg_id, decoded_message = self.__decode_message(message)
+                if msg_id is None or decoded_message is None:
+                    continue
+
+                with self.reply_wait_condition:
+                    if msg_id in self.reply_message:
+                        self.__handle_reply_message(msg_id, decoded_message, from_topic)
+                    elif msg_id in self.__monitor_pv_handler:
+                        self.__handle_monitor_event(executor, from_topic, msg_id, decoded_message)
+                    elif msg_id in self.reply_snapsthot_message or from_topic in self.reply_recurring_snapsthot_message:
+                        self.__handle_snapshot_message(executor, from_topic, msg_id, decoded_message)
+                    else:
+                        reply_id = decoded_message.get('reply_id') if isinstance(decoded_message, dict) else None
+                        msg_keys = list(decoded_message.keys()) if isinstance(decoded_message, dict) else []
+                        if reply_id is not None:
+                            timeout_ts = self.__timed_out_replies.pop(reply_id, None)
+                            if timeout_ts is not None:
+                                late_by_sec = datetime.datetime.now().timestamp() - timeout_ts
+                                logger.warning(
+                                    "Dropped late reply from Kafka: topic=%s reply_id=%s arrived %.3fs after client timeout. keys=%s",
+                                    from_topic,
+                                    reply_id,
+                                    late_by_sec,
+                                    msg_keys,
+                                )
+                            else:
+                                logger.warning(
+                                    "Dropped unmatched reply from Kafka: topic=%s reply_id=%s keys=%s",
+                                    from_topic,
+                                    reply_id,
+                                    msg_keys,
+                                )
+                        else:
+                            logger.debug(
+                                "Dropped unhandled Kafka message: topic=%s msg_id=%s keys=%s",
+                                from_topic,
+                                msg_id,
+                                msg_keys,
+                            )
 
 
     def parse_pv_url(self, pv_url):
@@ -348,6 +880,14 @@ class dml:
         )
         if not got_it:
             # The timeout has expired and no message was received
+            self.__timed_out_replies[new_reply_id] = datetime.datetime.now().timestamp()
+            self.__prune_timed_out_replies()
+            logger.warning(
+                "Timeout waiting for reply_id=%s (timeout=%s). pending_reply_slots=%s",
+                new_reply_id,
+                timeout,
+                len(self.reply_message),
+            )
             return -2, None
         reply_msg = self.reply_message.pop(new_reply_id, None)
         if reply_msg is None:
@@ -432,7 +972,7 @@ class dml:
                 if op_res == -2:
                     # raise timeout exception
                     raise OperationTimeout(
-                            f"Timeout during start get operation for {pv_name}"
+                            f"Timeout during put operation for {pv_name}"
                             )
                 elif op_res == -1:
                     continue
